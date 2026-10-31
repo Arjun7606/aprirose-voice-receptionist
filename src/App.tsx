@@ -162,7 +162,10 @@ export default function App() {
   const speakText = (text: string) => {
     if (!isTtsEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
-    const cleanText = text.replace(/\*\*/g, '');
+    // Replace "Aprirose" with phonetic "Apree-rose" for TTS so it never slurs it as "Aprose"
+    const cleanText = text
+      .replace(/\*\*/g, '')
+      .replace(/\bAprirose\b/gi, 'Apree-rose');
     const utterance = new SpeechSynthesisUtterance(cleanText);
     const voices = window.speechSynthesis.getVoices();
     const preferredVoice =

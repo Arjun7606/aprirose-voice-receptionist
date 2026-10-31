@@ -267,7 +267,7 @@ export class GeminiLiveReceptionistClient {
 
         // Trigger initial spoken greeting from the receptionist
         this.sendTextMessage(
-          'A caller just connected to the Aprirose Trading Limited voice receptionist line. Greet them warmly in 2 sentences and ask how you can help them today.'
+          'A caller just connected to the Aprirose Trading Limited voice receptionist line. Remember to pronounce Aprirose clearly as "Ap-ree-rose" (three syllables: Ap-ree-rose, never Aprose). Greet them warmly in 2 sentences and ask how you can help them today.'
         );
         return;
       } catch (err: any) {
@@ -312,7 +312,11 @@ export class GeminiLiveReceptionistClient {
     }
 
     if (content?.outputTranscription?.text) {
-      this.callbacks.onAssistantTranscript(content.outputTranscription.text, Boolean(content.turnComplete));
+      const normalizedTranscript = content.outputTranscription.text.replace(
+        /\bAp-?ree-?rose\b/gi,
+        'Aprirose'
+      );
+      this.callbacks.onAssistantTranscript(normalizedTranscript, Boolean(content.turnComplete));
     }
 
     if (content?.modelTurn?.parts) {
