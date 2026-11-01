@@ -21,6 +21,10 @@ import {
   X,
   ChevronDown,
   ChevronRight,
+  Clock,
+  Download,
+  Globe,
+  Trash2,
 } from 'lucide-react';
 import {
   APRIROSE_KNOWLEDGE_BASE,
@@ -56,6 +60,49 @@ const CRM_STAGES: CrmStage[] = [
   'Quotation Issued',
   'Won / Allocated',
 ];
+
+const CALENDAR_WEEK_DAYS = [
+  { key: 'Monday, 2 Nov 2026', shortDay: 'Mon', dayNum: '02', month: 'Nov' },
+  { key: 'Tuesday, 3 Nov 2026', shortDay: 'Tue', dayNum: '03', month: 'Nov' },
+  { key: 'Wednesday, 4 Nov 2026', shortDay: 'Wed', dayNum: '04', month: 'Nov' },
+  { key: 'Thursday, 5 Nov 2026', shortDay: 'Thu', dayNum: '05', month: 'Nov' },
+  { key: 'Friday, 6 Nov 2026', shortDay: 'Fri', dayNum: '06', month: 'Nov' },
+];
+
+const CALENDAR_HOURS = [
+  { hour24: 9, label: '09:00 AM', defaultClock: '09:00', amPm: 'AM' as const },
+  { hour24: 10, label: '10:00 AM', defaultClock: '10:30', amPm: 'AM' as const },
+  { hour24: 11, label: '11:00 AM', defaultClock: '11:00', amPm: 'AM' as const },
+  { hour24: 12, label: '12:00 PM', defaultClock: '12:00', amPm: 'PM' as const },
+  { hour24: 13, label: '01:00 PM', defaultClock: '01:00', amPm: 'PM' as const },
+  { hour24: 14, label: '02:00 PM', defaultClock: '02:30', amPm: 'PM' as const },
+  { hour24: 15, label: '03:00 PM', defaultClock: '03:30', amPm: 'PM' as const },
+  { hour24: 16, label: '04:00 PM', defaultClock: '04:00', amPm: 'PM' as const },
+  { hour24: 17, label: '05:00 PM', defaultClock: '05:00', amPm: 'PM' as const },
+];
+
+function resolveDayKey(dateStr?: string): string {
+  if (!dateStr) return 'Monday, 2 Nov 2026';
+  const d = dateStr.toLowerCase();
+  if (d.includes('tue') || d.includes('3 nov')) return 'Tuesday, 3 Nov 2026';
+  if (d.includes('wed') || d.includes('4 nov')) return 'Wednesday, 4 Nov 2026';
+  if (d.includes('thu') || d.includes('5 nov')) return 'Thursday, 5 Nov 2026';
+  if (d.includes('fri') || d.includes('6 nov')) return 'Friday, 6 Nov 2026';
+  return 'Monday, 2 Nov 2026';
+}
+
+function resolveHour24(clockTime?: string, amPm?: string): number {
+  if (!clockTime) return 10;
+  const parts = clockTime.split(':');
+  let h = parseInt(parts[0], 10);
+  if (isNaN(h)) return 10;
+  const upper = (amPm || '').toUpperCase();
+  if (upper === 'PM' && h < 12) h += 12;
+  if (upper === 'AM' && h === 12) h = 9;
+  if (h < 9) return 9;
+  if (h > 17) return 17;
+  return h;
+}
 
 const QUICK_SCENARIOS = [
   {
@@ -154,7 +201,7 @@ export default function App() {
   const [humanPaused, setHumanPaused] = useState(false);
   const [groundedClaims, setGroundedClaims] = useState<GroundedClaim[]>([]);
 
-  // CRM State
+  // CRM & Calendar State
   const [crmLeads, setCrmLeads] = useState<CrmLeadRecord[]>(() => {
     const saved = localStorage.getItem('aprirose_crm_leads_v2');
     if (saved) {
@@ -167,9 +214,23 @@ export default function App() {
     return INITIAL_CRM_LEADS;
   });
   const [crmViewMode, setCrmViewMode] = useState<'table' | 'kanban'>('table');
+  const [calendarViewMode, setCalendarViewMode] = useState<'week' | 'agenda'>('week');
   const [crmSearch, setCrmSearch] = useState('');
   const [crmOfficeFilter, setCrmOfficeFilter] = useState<string>('ALL');
   const [selectedLead, setSelectedLead] = useState<CrmLeadRecord | null>(null);
+  const [selectedMeetingLead, setSelectedMeetingLead] = useState<CrmLeadRecord | null>(null);
+  const [showQuickBookModal, setShowQuickBookModal] = useState(false);
+  const [quickBookForm, setQuickBookForm] = useState({
+    company: '',
+    contactName: '',
+    email: '',
+    phone: '',
+    material: '',
+    date: 'Monday, 2 Nov 2026',
+    clockTime: '10:30',
+    amPm: 'AM' as 'AM' | 'PM',
+    timezone: 'Asia/Kolkata',
+  });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Knowledge Base Sub-tab
@@ -261,7 +322,10 @@ export default function App() {
         callDurationSec: callSeconds || 45,
         facts: { ...buyerFacts },
         factEvidence: { ...factEvidence },
-        meeting: { ...meetingState },
+        meeting: {
+          ...meetingState,
+          date: meetingState.date ? resolveDayKey(meetingState.date) : meetingState.date,
+        },
         claims: [...groundedClaims],
         notes:
           existingIdx >= 0
@@ -281,7 +345,7 @@ export default function App() {
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    setTimeout(() => setToastMessage(null), 3200);
   };
 
   const formatTimer = (totalSec: number) => {
@@ -342,7 +406,13 @@ export default function App() {
     }
 
     if (result.updatedMeeting) {
-      setMeetingState((prev) => ({ ...prev, ...result.updatedMeeting }));
+      setMeetingState((prev) => {
+        const next = { ...prev, ...result.updatedMeeting };
+        if (next.status === 'demo_booked') {
+          showToast(`Demo Meeting Booked: ${next.date} at ${next.clockTime} ${next.amPm} (${next.timezone})`);
+        }
+        return next;
+      });
     }
 
     if (result.humanHandoffTriggered) {
@@ -473,7 +543,17 @@ export default function App() {
           if (evidence) setFactEvidence((prev) => ({ ...prev, ...evidence }));
         },
         onMeetingUpdated: (meeting) => {
-          setMeetingState((prev) => ({ ...prev, ...meeting }));
+          setMeetingState((prev) => {
+            const next = {
+              ...prev,
+              ...meeting,
+              date: meeting.date ? resolveDayKey(meeting.date) : prev.date,
+            };
+            if (next.status === 'demo_booked') {
+              showToast(`Demo Meeting Booked on Calendar: ${next.date}`);
+            }
+            return next;
+          });
         },
         onHumanHandoff: (paused) => {
           setHumanPaused(paused);
@@ -592,6 +672,110 @@ export default function App() {
     showToast(`Stage updated to ${newStage}`);
   };
 
+  // Open Quick Book Modal pre-populated with current active caller facts (or clicked calendar slot)
+  const openQuickBookModal = (dayKey?: string, clockTime?: string, amPm?: 'AM' | 'PM') => {
+    setQuickBookForm({
+      company: buyerFacts.company || 'ABC Plastics Ltd.',
+      contactName: buyerFacts.contactName || 'John Smith',
+      email: buyerFacts.email || 'john.smith@abcplastics.mg',
+      phone: buyerFacts.phone || '+261 34 12 345 67',
+      material: buyerFacts.material || 'PP Homopolymer (PPH) — Raffia (100 MT)',
+      date: dayKey || (meetingState.date ? resolveDayKey(meetingState.date) : 'Monday, 2 Nov 2026'),
+      clockTime: clockTime || meetingState.clockTime || '10:30',
+      amPm: amPm || (meetingState.amPm === 'PM' ? 'PM' : 'AM'),
+      timezone:
+        meetingState.timezone && !meetingState.timezone.includes('Ambiguous')
+          ? meetingState.timezone
+          : 'Asia/Kolkata',
+    });
+    setShowQuickBookModal(true);
+  };
+
+  const handleConfirmQuickBook = (e: React.FormEvent) => {
+    e.preventDefault();
+    const updatedFacts: BuyerFacts = {
+      ...buyerFacts,
+      company: quickBookForm.company.trim(),
+      contactName: quickBookForm.contactName.trim(),
+      email: quickBookForm.email.trim(),
+      phone: quickBookForm.phone.trim(),
+      material: quickBookForm.material.trim(),
+    };
+    const updatedMeeting: SimulatedMeetingState = {
+      status: 'demo_booked',
+      date: quickBookForm.date,
+      clockTime: quickBookForm.clockTime,
+      amPm: quickBookForm.amPm,
+      timezone: quickBookForm.timezone,
+      validationNotes: [],
+      confirmedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setBuyerFacts(updatedFacts);
+    setMeetingState(updatedMeeting);
+    setShowQuickBookModal(false);
+
+    const confirmMsg = `Your SIMULATED / DEMO MEETING is now confirmed and saved as "Demo booked" in the demo CRM calendar for ${updatedMeeting.date} at ${updatedMeeting.clockTime} ${updatedMeeting.amPm} (${updatedMeeting.timezone}) with ${updatedFacts.contactName} from ${updatedFacts.company}.`;
+    setTranscript((prev) => [
+      ...prev,
+      {
+        id: `rec-book-${Date.now()}`,
+        role: 'receptionist',
+        text: confirmMsg,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
+    speakText(confirmMsg);
+    showToast(`Demo Meeting Booked on Calendar: ${updatedMeeting.date} at ${updatedMeeting.clockTime} ${updatedMeeting.amPm}`);
+  };
+
+  const handleCancelLeadMeeting = (leadId: string) => {
+    if (leadId === activeLeadId) {
+      setMeetingState({
+        status: 'cancelled',
+        validationNotes: ['Cancelled by user in demo calendar.'],
+      });
+    }
+    setCrmLeads((prev) => {
+      const next = prev.map((l) =>
+        l.id === leadId
+          ? {
+              ...l,
+              meeting: { ...l.meeting, status: 'cancelled' as const },
+            }
+          : l
+      );
+      syncLeadsToBackend(next);
+      return next;
+    });
+    setSelectedMeetingLead(null);
+    showToast('Simulated meeting marked as cancelled');
+  };
+
+  const handleDownloadIcs = (lead: CrmLeadRecord) => {
+    const content = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Aprirose Trading Limited//Demo Voice Receptionist//EN',
+      'BEGIN:VEVENT',
+      `UID:${lead.id}@aprirose.com`,
+      `SUMMARY:[SIMULATED DEMO] Aprirose Commercial Call - ${lead.facts.company || 'Buyer'}`,
+      `DESCRIPTION:Simulated CRM Demo Booking\\nReference: ${lead.referenceCode}\\nProduct: ${lead.facts.material || 'TBD'}\\nQuantity: ${lead.facts.quantity || 'TBD'}\\nAssigned Desk: ${lead.assignedOffice} (${lead.assignedOwner})\\nCaller Timezone: ${lead.meeting.timezone}`,
+      `LOCATION:Online / ${lead.assignedOffice}`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+
+    const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${lead.referenceCode}-demo-meeting.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Downloaded ${lead.referenceCode}-demo-meeting.ics`);
+  };
+
   const readiness = checkCommercialReadiness(buyerFacts);
   const activeOfficeRouting = inferAssignedOffice(buyerFacts);
 
@@ -669,7 +853,6 @@ export default function App() {
       {/* CLEAN WHITE ENTERPRISE SIDEBAR */}
       <aside className="w-60 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 select-none">
         <div>
-          {/* Brand Header */}
           <div className="h-14 px-5 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-md bg-blue-600 flex items-center justify-center font-bold text-white text-xs tracking-tight">
@@ -684,7 +867,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Primary Navigation */}
           <div className="p-3">
             <div className="px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Workspace
@@ -732,9 +914,15 @@ export default function App() {
               >
                 <span className="flex items-center gap-2.5">
                   <Calendar className="w-4 h-4" />
-                  Meetings
+                  Meetings Calendar
                 </span>
-                <span className="font-mono-tech text-[11px] text-slate-500">
+                <span
+                  className={`font-mono-tech text-[11px] px-1.5 py-0.5 rounded ${
+                    meetingState.status === 'demo_booked'
+                      ? 'bg-blue-600 text-white font-semibold'
+                      : 'text-slate-500'
+                  }`}
+                >
                   {bookedMeetingsList.length}
                 </span>
               </button>
@@ -755,7 +943,6 @@ export default function App() {
             </nav>
           </div>
 
-          {/* Regional Routing List */}
           <div className="px-3 py-2 border-t border-slate-100">
             <div className="px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Regional Desks
@@ -785,7 +972,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Bottom Audio Stack Selector */}
         <div className="p-3 border-t border-slate-200 bg-slate-50/60">
           <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1.5 px-1">
             <span className="font-medium">Voice Engine</span>
@@ -833,7 +1019,7 @@ export default function App() {
             <h1 className="text-sm font-semibold text-slate-900">
               {activeWorkspace === 'receptionist' && 'Voice Receptionist & Real-Time Qualification'}
               {activeWorkspace === 'crm' && 'Commercial Inquiries & Deal Pipeline'}
-              {activeWorkspace === 'meetings' && 'Scheduled Meetings & Timezone Registry'}
+              {activeWorkspace === 'meetings' && 'Commercial Meetings Calendar (Week of 2–6 Nov 2026)'}
               {activeWorkspace === 'knowledge' && 'Corporate Knowledge Base & Compliance Reference'}
             </h1>
             <span className="text-xs text-slate-300">|</span>
@@ -843,6 +1029,14 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => openQuickBookModal()}
+              className="px-3 py-1.5 rounded-md bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <Calendar className="w-3.5 h-3.5 text-blue-600" />
+              Schedule Demo Slot
+            </button>
+
             <button
               onClick={handleStartFreshCallSession}
               className="px-3 py-1.5 rounded-md bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
@@ -930,7 +1124,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Action Buttons */}
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleToggleMicMute}
@@ -994,13 +1187,12 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
               {/* LEFT 7 COLS: CONVERSATION TRANSCRIPT & CALLER PROMPTS */}
               <div className="lg:col-span-7 bg-white border border-slate-200 rounded-lg flex flex-col overflow-hidden">
-                {/* Clean Collapsible Demo Scenarios Strip */}
                 <div className="border-b border-slate-200 bg-slate-50/70">
                   <button
                     onClick={() => setShowPromptsBar(!showPromptsBar)}
                     className="w-full px-4 py-2.5 flex items-center justify-between text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
                   >
-                    <span>Sample Caller Utterances (Click to simulate spoken input)</span>
+                    <span>Sample Caller Utterances (Click 1 → 2 → 3 in sequence to book a live demo meeting)</span>
                     <ChevronDown
                       className={`w-4 h-4 text-slate-400 transition-transform ${
                         showPromptsBar ? 'rotate-180' : ''
@@ -1113,7 +1305,6 @@ export default function App() {
 
               {/* RIGHT 5 COLS: SINGLE UNIFIED RFQ QUALIFICATION SHEET */}
               <div className="lg:col-span-5 bg-white border border-slate-200 rounded-lg divide-y divide-slate-200 flex flex-col justify-between">
-                {/* Header & Readiness */}
                 <div className="p-4">
                   <div className="flex items-center justify-between gap-2">
                     <div>
@@ -1149,7 +1340,6 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Clean Progress Bar */}
                   <div className="mt-3">
                     <div className="flex items-center justify-between text-xs mb-1">
                       <span className="text-slate-500">Qualification Completeness</span>
@@ -1219,28 +1409,30 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Simulated Meeting Section */}
-                <div className="p-4 bg-slate-50/50 space-y-2.5">
+                {/* Simulated Meeting Section with Calendar Actions */}
+                <div className="p-4 bg-slate-50/50 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-blue-600" />
                       Simulated Meeting Slot
                     </span>
-                    <span
-                      className={`px-2 py-0.5 rounded text-[11px] font-mono-tech font-medium border ${
-                        meetingState.status === 'demo_booked'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[11px] font-mono-tech font-medium border ${
+                          meetingState.status === 'demo_booked'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : meetingState.status === 'collecting'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-white text-slate-500 border-slate-200'
+                        }`}
+                      >
+                        {meetingState.status === 'demo_booked'
+                          ? 'Demo Booked'
                           : meetingState.status === 'collecting'
-                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                          : 'bg-white text-slate-500 border-slate-200'
-                      }`}
-                    >
-                      {meetingState.status === 'demo_booked'
-                        ? 'Demo Booked'
-                        : meetingState.status === 'collecting'
-                        ? 'Collecting Slot'
-                        : 'Not Requested'}
-                    </span>
+                          ? 'Collecting Slot'
+                          : 'Not Requested'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2 text-xs">
@@ -1272,6 +1464,22 @@ export default function App() {
                       <span>{meetingState.validationNotes.join(' ')}</span>
                     </div>
                   )}
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => openQuickBookModal()}
+                      className="flex-1 py-1.5 px-3 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium transition cursor-pointer"
+                    >
+                      {meetingState.status === 'demo_booked' ? 'Edit / Reschedule Slot' : 'Quick-Book Demo Slot'}
+                    </button>
+                    <button
+                      onClick={() => setActiveWorkspace('meetings')}
+                      className="flex-1 py-1.5 px-3 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <span>Open Calendar Grid</span>
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1281,7 +1489,6 @@ export default function App() {
         {/* WORKSPACE 2: CRM PIPELINE */}
         {activeWorkspace === 'crm' && (
           <div className="p-6 space-y-5 max-w-[1500px]">
-            {/* Clean Metric Strip */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: 'Active Inquiries', value: crmLeads.length, sub: 'Synced to local CRM DB' },
@@ -1300,10 +1507,7 @@ export default function App() {
                   sub: '25-field schema coverage',
                 },
               ].map((stat) => (
-                <div
-                  key={stat.label}
-                  className="bg-white border border-slate-200 rounded-lg p-4"
-                >
+                <div key={stat.label} className="bg-white border border-slate-200 rounded-lg p-4">
                   <div className="text-xs text-slate-500">{stat.label}</div>
                   <div className="text-2xl font-bold font-mono-tech text-slate-900 mt-1">
                     {stat.value}
@@ -1313,7 +1517,6 @@ export default function App() {
               ))}
             </div>
 
-            {/* Filter & View Controls */}
             <div className="bg-white border border-slate-200 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2 flex-1">
                 <div className="relative min-w-[240px] flex-1 max-w-sm">
@@ -1377,7 +1580,7 @@ export default function App() {
                         <th className="py-3 px-4">Material & Grade</th>
                         <th className="py-3 px-4">Quantity</th>
                         <th className="py-3 px-4">Port & Terms</th>
-                        <th className="py-3 px-4">Assigned Desk</th>
+                        <th className="py-3 px-4">Meeting Slot</th>
                         <th className="py-3 px-4">Stage</th>
                         <th className="py-3 px-4 text-right">Details</th>
                       </tr>
@@ -1429,8 +1632,19 @@ export default function App() {
                             </div>
                           </td>
                           <td className="py-3 px-4">
-                            <div className="font-medium text-slate-800">{lead.assignedOffice}</div>
-                            <div className="text-[11px] text-slate-500">{lead.assignedOwner}</div>
+                            {lead.meeting.status === 'demo_booked' ? (
+                              <div>
+                                <span className="inline-block px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-medium">
+                                  Demo Booked
+                                </span>
+                                <div className="text-[11px] font-mono-tech text-slate-600 mt-0.5">
+                                  {lead.meeting.date?.split(',')[0]} {lead.meeting.clockTime}{' '}
+                                  {lead.meeting.amPm}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
                           </td>
                           <td className="py-3 px-4">
                             <span
@@ -1493,7 +1707,9 @@ export default function App() {
 
                             <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono-tech text-slate-600">
                               <span>{lead.facts.quantity || 'TBD'}</span>
-                              <span>{lead.facts.dischargePort || lead.facts.companyCountry || ''}</span>
+                              <span>
+                                {lead.facts.dischargePort || lead.facts.companyCountry || ''}
+                              </span>
                             </div>
                           </div>
                         ))}
@@ -1506,26 +1722,202 @@ export default function App() {
           </div>
         )}
 
-        {/* WORKSPACE 3: SIMULATED MEETINGS */}
+        {/* WORKSPACE 3: FULL INTERACTIVE VISUAL MEETINGS CALENDAR */}
         {activeWorkspace === 'meetings' && (
-          <div className="p-6 max-w-[1500px]">
-            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-              <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-                <div>
+          <div className="p-6 max-w-[1500px] space-y-4">
+            {/* Calendar Toolbar */}
+            <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
                   <h3 className="text-sm font-semibold text-slate-900">
-                    Simulated Sales Meeting Schedule
+                    Commercial Sales Calendar — November 2026
                   </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    All meetings booked via the voice receptionist are recorded as simulated CRM entries.
-                  </p>
+                  <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono-tech text-[11px] font-medium">
+                    {bookedMeetingsList.length} Active Slots
+                  </span>
                 </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Click any booked event to inspect or reschedule, or click any empty time slot to schedule a simulated meeting.
+                </p>
               </div>
 
-              <div className="divide-y divide-slate-200">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => openQuickBookModal()}
+                  className="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Book Simulated Meeting
+                </button>
+
+                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-md border border-slate-200">
+                  <button
+                    onClick={() => setCalendarViewMode('week')}
+                    className={`px-3 py-1 rounded text-xs font-medium transition cursor-pointer ${
+                      calendarViewMode === 'week'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Week Grid
+                  </button>
+                  <button
+                    onClick={() => setCalendarViewMode('agenda')}
+                    className={`px-3 py-1 rounded text-xs font-medium transition cursor-pointer ${
+                      calendarViewMode === 'agenda'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Agenda List
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {calendarViewMode === 'week' ? (
+              /* INTERACTIVE 5-DAY WEEKLY TIME GRID */
+              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                {/* Day Column Headers */}
+                <div className="grid grid-cols-6 border-b border-slate-200 bg-slate-50">
+                  <div className="p-3 border-r border-slate-200 text-[11px] font-mono-tech uppercase text-slate-400 flex items-center">
+                    Time Slot
+                  </div>
+                  {CALENDAR_WEEK_DAYS.map((day) => {
+                    const dayCount = bookedMeetingsList.filter(
+                      (l) => resolveDayKey(l.meeting.date) === day.key
+                    ).length;
+                    return (
+                      <div
+                        key={day.key}
+                        className="p-3 border-r last:border-r-0 border-slate-200 flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                            {day.shortDay}
+                          </div>
+                          <div className="text-sm font-bold text-slate-900 font-mono-tech">
+                            {day.dayNum} {day.month}
+                          </div>
+                        </div>
+                        {dayCount > 0 && (
+                          <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-mono-tech text-[10px] font-semibold border border-blue-200">
+                            {dayCount} {dayCount === 1 ? 'call' : 'calls'}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Hour Rows */}
+                <div className="divide-y divide-slate-200">
+                  {CALENDAR_HOURS.map((slot) => (
+                    <div key={slot.hour24} className="grid grid-cols-6 min-h-[82px]">
+                      {/* Time Label Column */}
+                      <div className="p-2.5 border-r border-slate-200 bg-slate-50/40 text-[11px] font-mono-tech text-slate-400">
+                        {slot.label}
+                      </div>
+
+                      {/* 5 Day Cells */}
+                      {CALENDAR_WEEK_DAYS.map((day) => {
+                        const cellMeetings = bookedMeetingsList.filter(
+                          (l) =>
+                            resolveDayKey(l.meeting.date) === day.key &&
+                            resolveHour24(l.meeting.clockTime, l.meeting.amPm) === slot.hour24
+                        );
+
+                        return (
+                          <div
+                            key={day.key}
+                            onClick={() => {
+                              if (cellMeetings.length === 0) {
+                                openQuickBookModal(day.key, slot.defaultClock, slot.amPm);
+                              }
+                            }}
+                            className={`p-1.5 border-r last:border-r-0 border-slate-200 transition relative group ${
+                              cellMeetings.length === 0
+                                ? 'hover:bg-blue-50/30 cursor-pointer'
+                                : 'bg-white'
+                            }`}
+                          >
+                            {cellMeetings.length === 0 && (
+                              <div className="opacity-0 group-hover:opacity-100 transition text-[10px] text-blue-600 font-medium flex items-center gap-1 p-1">
+                                <Plus className="w-3 h-3" />
+                                <span>Book {slot.defaultClock}</span>
+                              </div>
+                            )}
+
+                            <div className="space-y-1.5">
+                              {cellMeetings.map((lead) => (
+                                <div
+                                  key={lead.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedMeetingLead(lead);
+                                  }}
+                                  className={`p-2 rounded border text-left transition cursor-pointer shadow-2xs ${
+                                    lead.isLiveSession
+                                      ? 'bg-blue-600 text-white border-blue-700'
+                                      : 'bg-blue-50/90 hover:bg-blue-100/80 text-slate-900 border-blue-200'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span
+                                      className={`font-mono-tech text-[10px] font-semibold ${
+                                        lead.isLiveSession ? 'text-blue-100' : 'text-blue-700'
+                                      }`}
+                                    >
+                                      {lead.meeting.clockTime} {lead.meeting.amPm}
+                                    </span>
+                                    <span
+                                      className={`font-mono-tech text-[9px] px-1 py-0.2 rounded ${
+                                        lead.isLiveSession
+                                          ? 'bg-white/20 text-white font-semibold'
+                                          : 'bg-white text-slate-600 border border-blue-200'
+                                      }`}
+                                    >
+                                      {lead.isLiveSession ? 'LIVE DEMO' : lead.referenceCode}
+                                    </span>
+                                  </div>
+
+                                  <div className="font-semibold text-xs truncate mt-0.5">
+                                    {lead.facts.company || 'Caller Inquiry'}
+                                  </div>
+
+                                  <div
+                                    className={`text-[10px] truncate ${
+                                      lead.isLiveSession ? 'text-blue-100' : 'text-slate-600'
+                                    }`}
+                                  >
+                                    {lead.facts.material || 'Material Inquiry'}
+                                  </div>
+
+                                  <div
+                                    className={`text-[10px] font-mono-tech mt-1 flex items-center justify-between ${
+                                      lead.isLiveSession ? 'text-blue-200' : 'text-slate-500'
+                                    }`}
+                                  >
+                                    <span>{lead.meeting.timezone}</span>
+                                    <span>{lead.assignedOffice.split(' ')[0]}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* AGENDA LIST VIEW */
+              <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-200">
                 {bookedMeetingsList.map((lead) => (
                   <div
                     key={lead.id}
-                    onClick={() => setSelectedLead(lead)}
+                    onClick={() => setSelectedMeetingLead(lead)}
                     className="p-4 hover:bg-slate-50 transition cursor-pointer flex flex-wrap items-center justify-between gap-4 text-xs"
                   >
                     <div className="space-y-0.5">
@@ -1566,7 +1958,7 @@ export default function App() {
                   </div>
                 ))}
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -1765,6 +2157,305 @@ export default function App() {
         )}
       </div>
 
+      {/* CALENDAR MEETING DETAIL & RESCHEDULE MODAL */}
+      {selectedMeetingLead && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-lg w-full p-5 border border-slate-200 shadow-xl space-y-4">
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-medium">
+                    Simulated Demo Booking
+                  </span>
+                  <span className="font-mono-tech text-xs text-blue-600 font-semibold">
+                    {selectedMeetingLead.referenceCode}
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-slate-900 mt-1">
+                  {selectedMeetingLead.facts.company || 'Commercial Demo Meeting'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedMeetingLead(null)}
+                className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200 text-xs">
+              <div>
+                <div className="text-[10px] uppercase text-slate-400 font-semibold">Date</div>
+                <div className="font-semibold text-slate-900 mt-0.5">
+                  {selectedMeetingLead.meeting.date}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase text-slate-400 font-semibold">
+                  Time & Timezone
+                </div>
+                <div className="font-mono-tech font-semibold text-blue-600 mt-0.5">
+                  {selectedMeetingLead.meeting.clockTime} {selectedMeetingLead.meeting.amPm} (
+                  {selectedMeetingLead.meeting.timezone})
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase text-slate-400 font-semibold">
+                  Attendee & Contact
+                </div>
+                <div className="font-medium text-slate-900 mt-0.5">
+                  {selectedMeetingLead.facts.contactName || '—'}
+                </div>
+                <div className="font-mono-tech text-[11px] text-slate-500">
+                  {selectedMeetingLead.facts.email} · {selectedMeetingLead.facts.phone}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase text-slate-400 font-semibold">
+                  Assigned Aprirose Desk
+                </div>
+                <div className="font-medium text-slate-900 mt-0.5">
+                  {selectedMeetingLead.assignedOffice}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {selectedMeetingLead.assignedOwner}
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 text-xs">
+              <div className="px-3.5 py-2 flex justify-between">
+                <span className="text-slate-500">Product Requirement</span>
+                <span className="font-medium text-slate-900">
+                  {selectedMeetingLead.facts.material || '—'}
+                </span>
+              </div>
+              <div className="px-3.5 py-2 flex justify-between">
+                <span className="text-slate-500">Order Quantity / Monthly Vol</span>
+                <span className="font-mono-tech font-medium text-slate-900">
+                  {[selectedMeetingLead.facts.quantity, selectedMeetingLead.facts.monthlyVolume]
+                    .filter(Boolean)
+                    .join(' / ') || '—'}
+                </span>
+              </div>
+              <div className="px-3.5 py-2 flex justify-between">
+                <span className="text-slate-500">Discharge Port & Terms</span>
+                <span className="font-medium text-slate-900">
+                  {[
+                    selectedMeetingLead.facts.dischargePort,
+                    selectedMeetingLead.facts.shippingTermRequested,
+                    selectedMeetingLead.facts.paymentTermsRequested,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || '—'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
+              <button
+                onClick={() => handleCancelLeadMeeting(selectedMeetingLead.id)}
+                className="px-3 py-1.5 rounded-md bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-medium flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Cancel Booking
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleDownloadIcs(selectedMeetingLead)}
+                  className="px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export .ICS
+                </button>
+                <button
+                  onClick={() => {
+                    const leadToInspect = selectedMeetingLead;
+                    setSelectedMeetingLead(null);
+                    setSelectedLead(leadToInspect);
+                  }}
+                  className="px-3.5 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium cursor-pointer"
+                >
+                  Open Full 25-Field CRM Record
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK-BOOK / SCHEDULE DEMO MEETING MODAL */}
+      {showQuickBookModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleConfirmQuickBook}
+            className="bg-white rounded-lg max-w-md w-full p-5 border border-slate-200 shadow-xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Schedule Simulated Sales Meeting
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Validates the 4 mandatory demo criteria & plots onto the commercial calendar
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQuickBookModal(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Company Name *</label>
+                  <input
+                    required
+                    type="text"
+                    value={quickBookForm.company}
+                    onChange={(e) => setQuickBookForm({ ...quickBookForm, company: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded border border-slate-200 focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Customer Name *</label>
+                  <input
+                    required
+                    type="text"
+                    value={quickBookForm.contactName}
+                    onChange={(e) =>
+                      setQuickBookForm({ ...quickBookForm, contactName: e.target.value })
+                    }
+                    className="w-full px-2.5 py-1.5 rounded border border-slate-200 focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Email Address *</label>
+                  <input
+                    required
+                    type="email"
+                    value={quickBookForm.email}
+                    onChange={(e) => setQuickBookForm({ ...quickBookForm, email: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded border border-slate-200 font-mono-tech focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">
+                    Phone / WhatsApp *
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    value={quickBookForm.phone}
+                    onChange={(e) => setQuickBookForm({ ...quickBookForm, phone: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded border border-slate-200 font-mono-tech focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">
+                  Product / Material Requirement *
+                </label>
+                <input
+                  required
+                  type="text"
+                  value={quickBookForm.material}
+                  onChange={(e) => setQuickBookForm({ ...quickBookForm, material: e.target.value })}
+                  className="w-full px-2.5 py-1.5 rounded border border-slate-200 focus:outline-none focus:border-blue-600"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Date *</label>
+                  <select
+                    value={quickBookForm.date}
+                    onChange={(e) => setQuickBookForm({ ...quickBookForm, date: e.target.value })}
+                    className="w-full px-2 py-1.5 rounded border border-slate-200 bg-white"
+                  >
+                    {CALENDAR_WEEK_DAYS.map((d) => (
+                      <option key={d.key} value={d.key}>
+                        {d.shortDay}, {d.dayNum} {d.month}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Clock Time *</label>
+                  <div className="flex gap-1">
+                    <input
+                      required
+                      type="text"
+                      value={quickBookForm.clockTime}
+                      onChange={(e) =>
+                        setQuickBookForm({ ...quickBookForm, clockTime: e.target.value })
+                      }
+                      className="w-full px-2 py-1.5 rounded border border-slate-200 font-mono-tech"
+                    />
+                    <select
+                      value={quickBookForm.amPm}
+                      onChange={(e) =>
+                        setQuickBookForm({
+                          ...quickBookForm,
+                          amPm: e.target.value as 'AM' | 'PM',
+                        })
+                      }
+                      className="px-1.5 py-1.5 rounded border border-slate-200 bg-white font-mono-tech"
+                    >
+                      <option value="AM">AM</option>
+                      <option value="PM">PM</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Timezone *</label>
+                  <select
+                    value={quickBookForm.timezone}
+                    onChange={(e) =>
+                      setQuickBookForm({ ...quickBookForm, timezone: e.target.value })
+                    }
+                    className="w-full px-2 py-1.5 rounded border border-slate-200 bg-white font-mono-tech"
+                  >
+                    <option value="Asia/Kolkata">Asia/Kolkata</option>
+                    <option value="Africa/Nairobi">Africa/Nairobi</option>
+                    <option value="Asia/Dubai">Asia/Dubai</option>
+                    <option value="Europe/London">Europe/London</option>
+                    <option value="Asia/Singapore">Asia/Singapore</option>
+                    <option value="Africa/Lagos">Africa/Lagos</option>
+                    <option value="America/New_York">America/New_York</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setShowQuickBookModal(false)}
+                className="px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium cursor-pointer"
+              >
+                Confirm Simulated Booking
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* SLIDE-OVER CRM LEAD INSPECTOR */}
       {selectedLead && (
         <div className="fixed inset-0 z-40 bg-slate-900/30 flex justify-end">
@@ -1791,7 +2482,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Pipeline Stage Selector */}
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                   Pipeline Stage
@@ -1813,7 +2503,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 25-Field Table */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
