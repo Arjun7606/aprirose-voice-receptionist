@@ -729,6 +729,143 @@ export default function App() {
     showToast(`Demo Meeting Booked on Calendar: ${updatedMeeting.date} at ${updatedMeeting.clockTime} ${updatedMeeting.amPm}`);
   };
 
+  const handleResetDemoToDefaults = () => {
+    setActiveLeadId('lead-live-session');
+    setBuyerFacts({});
+    setFactEvidence({});
+    setMeetingState({ status: 'none', validationNotes: [] });
+    setHumanPaused(false);
+    setGroundedClaims([]);
+    setCallSeconds(0);
+    setTranscript([
+      {
+        id: `welcome-${Date.now()}`,
+        role: 'receptionist',
+        text: 'Welcome to Aprirose Trading Limited. I can assist you with polymer or chemical procurement, technical grade references, global office routing, or scheduling a commercial meeting. How may I help you today?',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
+    setCrmLeads(INITIAL_CRM_LEADS);
+    syncLeadsToBackend(INITIAL_CRM_LEADS);
+    setSelectedLead(null);
+    setSelectedMeetingLead(null);
+    showToast('Demo CRM & Calendar reset to clean initial baseline');
+  };
+
+  const handleExportCrmCsv = () => {
+    const headers = [
+      'Reference',
+      'Stage',
+      'Assigned Desk',
+      'Company',
+      'Country',
+      'Buyer Type',
+      'Contact Name',
+      'Email',
+      'Phone',
+      'Material',
+      'MFI / Spec',
+      'Order Quantity',
+      'Monthly Volume',
+      'Discharge Port',
+      'Incoterm',
+      'Payment Term',
+      'Meeting Status',
+      'Meeting Date',
+      'Meeting Time',
+      'Timezone',
+    ];
+    const rows = crmLeads.map((l) => [
+      l.referenceCode,
+      l.stage,
+      l.assignedOffice,
+      l.facts.company || '',
+      l.facts.companyCountry || '',
+      l.facts.buyerType || '',
+      l.facts.contactName || '',
+      l.facts.email || '',
+      l.facts.phone || '',
+      l.facts.material || '',
+      l.facts.mfi || '',
+      l.facts.quantity || '',
+      l.facts.monthlyVolume || '',
+      l.facts.dischargePort || '',
+      l.facts.shippingTermRequested || '',
+      l.facts.paymentTermsRequested || '',
+      l.meeting.status,
+      l.meeting.date || '',
+      l.meeting.clockTime ? `${l.meeting.clockTime} ${l.meeting.amPm || ''}` : '',
+      l.meeting.timezone || '',
+    ]);
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
+    ].join('\r\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `aprirose-commercial-pipeline-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Exported commercial pipeline to CSV');
+  };
+
+  const handleRescheduleLeadSlot = (
+    leadId: string,
+    newDate: string,
+    newClock: string,
+    newAmPm: 'AM' | 'PM',
+    newTz: string
+  ) => {
+    if (leadId === activeLeadId) {
+      setMeetingState((prev) => ({
+        ...prev,
+        status: 'demo_booked',
+        date: newDate,
+        clockTime: newClock,
+        amPm: newAmPm,
+        timezone: newTz,
+      }));
+    }
+    setCrmLeads((prev) => {
+      const next = prev.map((l) =>
+        l.id === leadId
+          ? {
+              ...l,
+              meeting: {
+                ...l.meeting,
+                status: 'demo_booked' as const,
+                date: newDate,
+                clockTime: newClock,
+                amPm: newAmPm,
+                timezone: newTz,
+              },
+            }
+          : l
+      );
+      syncLeadsToBackend(next);
+      return next;
+    });
+    setSelectedMeetingLead((prev) =>
+      prev && prev.id === leadId
+        ? {
+            ...prev,
+            meeting: {
+              ...prev.meeting,
+              status: 'demo_booked',
+              date: newDate,
+              clockTime: newClock,
+              amPm: newAmPm,
+              timezone: newTz,
+            },
+          }
+        : prev
+    );
+    showToast(`Meeting rescheduled to ${newDate} at ${newClock} ${newAmPm} (${newTz})`);
+  };
+
   const handleCancelLeadMeeting = (leadId: string) => {
     if (leadId === activeLeadId) {
       setMeetingState({
@@ -1043,6 +1180,14 @@ export default function App() {
             >
               <Plus className="w-3.5 h-3.5 text-slate-500" />
               New Session
+            </button>
+
+            <button
+              onClick={handleResetDemoToDefaults}
+              className="px-3 py-1.5 rounded-md bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 text-xs font-medium transition cursor-pointer"
+              title="Reset CRM pipeline and calendar to clean default demo state"
+            >
+              Reset Demo
             </button>
 
             <button
@@ -1545,27 +1690,37 @@ export default function App() {
                 </select>
               </div>
 
-              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-md border border-slate-200">
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setCrmViewMode('table')}
-                  className={`px-3 py-1 rounded text-xs font-medium transition cursor-pointer ${
-                    crmViewMode === 'table'
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  onClick={handleExportCrmCsv}
+                  className="px-3 py-1.5 rounded-md bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
                 >
-                  Table View
+                  <Download className="w-3.5 h-3.5 text-blue-600" />
+                  Export CSV
                 </button>
-                <button
-                  onClick={() => setCrmViewMode('kanban')}
-                  className={`px-3 py-1 rounded text-xs font-medium transition cursor-pointer ${
-                    crmViewMode === 'kanban'
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Board View
-                </button>
+
+                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-md border border-slate-200">
+                  <button
+                    onClick={() => setCrmViewMode('table')}
+                    className={`px-3 py-1 rounded text-xs font-medium transition cursor-pointer ${
+                      crmViewMode === 'table'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Table View
+                  </button>
+                  <button
+                    onClick={() => setCrmViewMode('kanban')}
+                    className={`px-3 py-1 rounded text-xs font-medium transition cursor-pointer ${
+                      crmViewMode === 'kanban'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Board View
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2249,6 +2404,77 @@ export default function App() {
                     .filter(Boolean)
                     .join(' · ') || '—'}
                 </span>
+              </div>
+            </div>
+
+            {/* Inline Quick Reschedule Bar */}
+            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2 text-xs">
+              <div className="font-semibold text-slate-700 text-[11px] uppercase tracking-wider">
+                Reschedule Meeting Slot
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <select
+                  value={resolveDayKey(selectedMeetingLead.meeting.date)}
+                  onChange={(e) =>
+                    handleRescheduleLeadSlot(
+                      selectedMeetingLead.id,
+                      e.target.value,
+                      selectedMeetingLead.meeting.clockTime || '10:30',
+                      (selectedMeetingLead.meeting.amPm as 'AM' | 'PM') || 'AM',
+                      selectedMeetingLead.meeting.timezone || 'Asia/Kolkata'
+                    )
+                  }
+                  className="px-2 py-1.5 rounded border border-slate-200 bg-white text-xs"
+                >
+                  {CALENDAR_WEEK_DAYS.map((d) => (
+                    <option key={d.key} value={d.key}>
+                      {d.shortDay}, {d.dayNum} {d.month}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={`${selectedMeetingLead.meeting.clockTime || '10:30'}|${
+                    selectedMeetingLead.meeting.amPm || 'AM'
+                  }`}
+                  onChange={(e) => {
+                    const [clk, ap] = e.target.value.split('|');
+                    handleRescheduleLeadSlot(
+                      selectedMeetingLead.id,
+                      resolveDayKey(selectedMeetingLead.meeting.date),
+                      clk,
+                      (ap as 'AM' | 'PM') || 'AM',
+                      selectedMeetingLead.meeting.timezone || 'Asia/Kolkata'
+                    );
+                  }}
+                  className="px-2 py-1.5 rounded border border-slate-200 bg-white font-mono-tech text-xs"
+                >
+                  {CALENDAR_HOURS.map((h) => (
+                    <option key={h.hour24} value={`${h.defaultClock}|${h.amPm}`}>
+                      {h.defaultClock} {h.amPm}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={selectedMeetingLead.meeting.timezone || 'Asia/Kolkata'}
+                  onChange={(e) =>
+                    handleRescheduleLeadSlot(
+                      selectedMeetingLead.id,
+                      resolveDayKey(selectedMeetingLead.meeting.date),
+                      selectedMeetingLead.meeting.clockTime || '10:30',
+                      (selectedMeetingLead.meeting.amPm as 'AM' | 'PM') || 'AM',
+                      e.target.value
+                    )
+                  }
+                  className="px-2 py-1.5 rounded border border-slate-200 bg-white font-mono-tech text-xs"
+                >
+                  <option value="Asia/Kolkata">Asia/Kolkata</option>
+                  <option value="Africa/Nairobi">Africa/Nairobi</option>
+                  <option value="Asia/Dubai">Asia/Dubai</option>
+                  <option value="Europe/London">Europe/London</option>
+                  <option value="Asia/Singapore">Asia/Singapore</option>
+                </select>
               </div>
             </div>
 
