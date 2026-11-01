@@ -3,8 +3,9 @@
 @layer base {
   body {
     font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: #F4F7F6;
-    color: #0D2B2F;
+    background-color: #F2F5F4;
+    color: #0B2528;
+    overflow-x: hidden;
   }
 
   h1, h2, h3, .font-serif-editorial {
@@ -16,21 +17,40 @@
   }
 }
 
+/* Custom subtle scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #C4D4D2;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #98B2AF;
+}
+
 @keyframes pulse-ring {
   0% {
-    transform: scale(0.92);
-    opacity: 0.75;
+    transform: scale(0.94);
+    opacity: 0.7;
   }
   70% {
-    transform: scale(1.32);
+    transform: scale(1.35);
     opacity: 0;
   }
   100% {
-    transform: scale(1.32);
+    transform: scale(1.35);
     opacity: 0;
   }
 }
 
 .animate-pulse-ring {
-  animation: pulse-ring 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+  animation: pulse-ring 2.2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
 }
