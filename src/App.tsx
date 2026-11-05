@@ -13,7 +13,6 @@ import {
   UserCheck,
   Copy,
   Check,
-  KeyRound,
   Send,
   RotateCcw,
   BookOpen,
@@ -70,15 +69,9 @@ const QUICK_TOPICS = [
 ];
 
 export default function App() {
-  const [geminiApiKey, setGeminiApiKey] = useState<string>(
-    () =>
-      (import.meta as any).env?.VITE_GEMINI_API_KEY ||
-      localStorage.getItem('aprirose_gemini_api_key') ||
-      ''
-  );
-  const [geminiModel, setGeminiModel] = useState<string>('gemini-3.8-live');
+  const geminiApiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+  const geminiModel = 'gemini-3.8-live';
   const [geminiVoice, setGeminiVoice] = useState<string>('Aoede');
-  const [showKeyModal, setShowKeyModal] = useState(false);
 
   const [callStatus, setCallStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [statusDetail, setStatusDetail] = useState<string>('Ready to connect');
@@ -155,10 +148,6 @@ export default function App() {
 
   const startLiveCall = async (overrideKey?: string) => {
     const keyToUse = (overrideKey ?? geminiApiKey).trim();
-    if (!keyToUse) {
-      setShowKeyModal(true);
-      return;
-    }
 
     const client = new GeminiLiveReceptionistClient({
       onStatusChange: (status, detail) => {
@@ -269,8 +258,6 @@ export default function App() {
 
     if (callStatus === 'connected' && liveClientRef.current) {
       liveClientRef.current.sendTextMessage(trimmed);
-    } else if (!geminiApiKey.trim()) {
-      setShowKeyModal(true);
     } else {
       await startLiveCall();
       setTimeout(() => {
@@ -364,27 +351,13 @@ export default function App() {
                 className={`w-2 h-2 rounded-full ${
                   callStatus === 'connected'
                     ? 'bg-emerald-400 animate-pulse'
-                    : geminiApiKey
-                    ? 'bg-[#D8B47C]'
-                    : 'bg-rose-400'
+                    : 'bg-[#D8B47C]'
                 }`}
               />
               <span>
-                {callStatus === 'connected'
-                  ? 'Live Voice Active'
-                  : geminiApiKey
-                  ? 'Voice Line Ready'
-                  : 'API Key Required'}
+                {callStatus === 'connected' ? 'Live Voice Active' : 'Voice Line Ready'}
               </span>
             </div>
-
-            <button
-              onClick={() => setShowKeyModal(true)}
-              className="px-3.5 py-2 rounded-lg bg-[#143F45] hover:bg-[#1B5158] text-xs font-medium text-[#E8F1F1] border border-[#285E66] flex items-center gap-1.5 transition cursor-pointer"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-[#D8B47C]" />
-              <span>{geminiApiKey ? 'Voice Settings' : 'Connect API Key'}</span>
-            </button>
 
             <button
               onClick={handleResetSession}
@@ -1211,103 +1184,6 @@ export default function App() {
           )}
         </section>
       </main>
-
-      {/* VOICE SETTINGS & API KEY MODAL */}
-      {showKeyModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-[#D5E0DF] shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E6EEEE] pb-3">
-              <div>
-                <h3 className="text-base font-serif-editorial font-semibold text-[#0B2E33]">
-                  Aprirose Voice Receptionist Configuration
-                </h3>
-                <p className="text-xs text-[#527378]">
-                  Real-Time Bidirectional Voice & Live CRM Qualification
-                </p>
-              </div>
-              <button
-                onClick={() => setShowKeyModal(false)}
-                className="text-xs text-[#527378] hover:text-[#0B2E33] cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-semibold text-[#0B2E33] mb-1">
-                  Gemini Live API Key
-                </label>
-                <input
-                  type="password"
-                  value={geminiApiKey}
-                  onChange={(e) => {
-                    setGeminiApiKey(e.target.value);
-                    localStorage.setItem('aprirose_gemini_api_key', e.target.value);
-                  }}
-                  placeholder="Enter your Gemini API Key (AIzaSy...)"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#C6D6D5] font-mono-tech focus:outline-none focus:border-[#0B2E33]"
-                />
-                <p className="text-[11px] text-[#68878B] mt-1">
-                  Saved locally in your browser so calls connect immediately.
-                </p>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-[#0B2E33] mb-1">
-                  Voice Model
-                </label>
-                <select
-                  value={geminiModel}
-                  onChange={(e) => setGeminiModel(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#C6D6D5] bg-white"
-                >
-                  <option value="gemini-3.8-live">Gemini 3.8 Live (Ultra-Low Latency)</option>
-                  <option value="gemini-3.1-flash-live-preview">Gemini 3.1 Flash Live</option>
-                  <option value="gemini-2.5-flash-native-audio-preview-12-2025">
-                    Gemini 2.5 Native Audio
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-[#0B2E33] mb-1">
-                  Receptionist Voice Persona
-                </label>
-                <select
-                  value={geminiVoice}
-                  onChange={(e) => setGeminiVoice(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#C6D6D5] bg-white"
-                >
-                  <option value="Aoede">Aoede (Warm British / International Feminine)</option>
-                  <option value="Kore">Kore (Soft, Composed Feminine)</option>
-                  <option value="Leda">Leda (Clear, Expressive Feminine)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setShowKeyModal(false)}
-                className="px-4 py-2 rounded-xl border border-[#C6D6D5] text-xs font-medium text-[#4A6B70] hover:bg-[#F4F8F7] cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowKeyModal(false);
-                  if (geminiApiKey.trim() && callStatus === 'disconnected') {
-                    startLiveCall(geminiApiKey.trim());
-                  }
-                }}
-                className="px-4 py-2 rounded-xl bg-[#0B2E33] hover:bg-[#14454C] text-white text-xs font-semibold cursor-pointer"
-              >
-                Save & Connect Voice
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
