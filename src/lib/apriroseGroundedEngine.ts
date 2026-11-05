@@ -303,20 +303,7 @@ export function extractFactsAndProcessTurn(
 
     const dateMatch = text.match(/\b(tomorrow|today|monday|tuesday|wednesday|thursday|friday|next\s+\w+|\d{1,2}\s+(?:nov|november|oct|october|dec|december)(?:\s+\d{4})?)\b/i);
     if (dateMatch) {
-      const rawDate = dateMatch[1].toLowerCase();
-      if (rawDate === 'monday' || rawDate === 'tomorrow' || rawDate === 'today' || /^2\s+nov/.test(rawDate)) {
-        nextMeeting.date = 'Monday, 2 Nov 2026';
-      } else if (rawDate === 'tuesday' || /^3\s+nov/.test(rawDate)) {
-        nextMeeting.date = 'Tuesday, 3 Nov 2026';
-      } else if (rawDate === 'wednesday' || /^4\s+nov/.test(rawDate)) {
-        nextMeeting.date = 'Wednesday, 4 Nov 2026';
-      } else if (rawDate === 'thursday' || /^5\s+nov/.test(rawDate)) {
-        nextMeeting.date = 'Thursday, 5 Nov 2026';
-      } else if (rawDate === 'friday' || /^6\s+nov/.test(rawDate)) {
-        nextMeeting.date = 'Friday, 6 Nov 2026';
-      } else {
-        nextMeeting.date = dateMatch[1];
-      }
+      nextMeeting.date = dateMatch[1];
     }
 
     const timeWithAmPm = text.match(/\b(\d{1,2}(?::\d{2})?)\s*(am|pm)\b/i);

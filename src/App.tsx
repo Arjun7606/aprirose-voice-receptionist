@@ -7,24 +7,25 @@ import {
   Volume2,
   VolumeX,
   CheckCircle2,
-  AlertCircle,
+  AlertTriangle,
   Calendar,
+  Building2,
+  Package,
+  Globe2,
+  ShieldCheck,
+  Sparkles,
+  UserCheck,
   Copy,
   Check,
   Settings,
   Send,
+  RotateCcw,
   BookOpen,
-  Kanban,
-  ArrowUpRight,
-  Search,
-  Plus,
-  X,
-  ChevronDown,
-  ChevronRight,
+  FileText,
   Clock,
-  Download,
-  Globe,
-  Trash2,
+  HelpCircle,
+  Radio,
+  Award,
 } from 'lucide-react';
 import {
   APRIROSE_KNOWLEDGE_BASE,
@@ -33,13 +34,8 @@ import {
   SimulatedMeetingState,
 } from './data/apriroseKnowledge';
 import {
-  CrmLeadRecord,
-  CrmStage,
-  INITIAL_CRM_LEADS,
-  inferAssignedOffice,
-} from './data/mockCrmData';
-import {
   checkCommercialReadiness,
+  checkSimulatedMeetingReadiness,
   extractFactsAndProcessTurn,
 } from './lib/apriroseGroundedEngine';
 import { GeminiLiveReceptionistClient } from './lib/geminiLiveService';
@@ -53,111 +49,51 @@ interface TranscriptTurn {
   askedFields?: string[];
 }
 
-const CRM_STAGES: CrmStage[] = [
-  'New Voice Intake',
-  'Qualified for Review',
-  'Sourcing & TDS Review',
-  'Quotation Issued',
-  'Won / Allocated',
-];
-
-const CALENDAR_WEEK_DAYS = [
-  { key: 'Monday, 2 Nov 2026', shortDay: 'Mon', dayNum: '02', month: 'Nov' },
-  { key: 'Tuesday, 3 Nov 2026', shortDay: 'Tue', dayNum: '03', month: 'Nov' },
-  { key: 'Wednesday, 4 Nov 2026', shortDay: 'Wed', dayNum: '04', month: 'Nov' },
-  { key: 'Thursday, 5 Nov 2026', shortDay: 'Thu', dayNum: '05', month: 'Nov' },
-  { key: 'Friday, 6 Nov 2026', shortDay: 'Fri', dayNum: '06', month: 'Nov' },
-];
-
-const CALENDAR_HOURS = [
-  { hour24: 9, label: '09:00 AM', defaultClock: '09:00', amPm: 'AM' as const },
-  { hour24: 10, label: '10:00 AM', defaultClock: '10:30', amPm: 'AM' as const },
-  { hour24: 11, label: '11:00 AM', defaultClock: '11:00', amPm: 'AM' as const },
-  { hour24: 12, label: '12:00 PM', defaultClock: '12:00', amPm: 'PM' as const },
-  { hour24: 13, label: '01:00 PM', defaultClock: '01:00', amPm: 'PM' as const },
-  { hour24: 14, label: '02:00 PM', defaultClock: '02:30', amPm: 'PM' as const },
-  { hour24: 15, label: '03:00 PM', defaultClock: '03:30', amPm: 'PM' as const },
-  { hour24: 16, label: '04:00 PM', defaultClock: '04:00', amPm: 'PM' as const },
-  { hour24: 17, label: '05:00 PM', defaultClock: '05:00', amPm: 'PM' as const },
-];
-
-function resolveDayKey(dateStr?: string): string {
-  if (!dateStr) return 'Monday, 2 Nov 2026';
-  const d = dateStr.toLowerCase();
-  if (d.includes('tue') || d.includes('3 nov')) return 'Tuesday, 3 Nov 2026';
-  if (d.includes('wed') || d.includes('4 nov')) return 'Wednesday, 4 Nov 2026';
-  if (d.includes('thu') || d.includes('5 nov')) return 'Thursday, 5 Nov 2026';
-  if (d.includes('fri') || d.includes('6 nov')) return 'Friday, 6 Nov 2026';
-  return 'Monday, 2 Nov 2026';
-}
-
-function resolveHour24(clockTime?: string, amPm?: string): number {
-  if (!clockTime) return 10;
-  const parts = clockTime.split(':');
-  let h = parseInt(parts[0], 10);
-  if (isNaN(h)) return 10;
-  const upper = (amPm || '').toUpperCase();
-  if (upper === 'PM' && h < 12) h += 12;
-  if (upper === 'AM' && h === 12) h = 9;
-  if (h < 9) return 9;
-  if (h > 17) return 17;
-  return h;
-}
-
 const QUICK_SCENARIOS = [
   {
-    category: 'RFQ Intake',
-    label: 'PP Raffia 100 MT to Tamatave',
+    label: '1. PP Raffia Enquiry (100 MT to Tamatave)',
     prompt:
       'Hi, we are ABC Plastics Ltd based in Madagascar. We are a manufacturer looking for 100 MT of PP Raffia grade around MFI 3.5, ideally Jinneng, shipped CIF to Tamatave port on LC payment terms, and our monthly consumption is 250 MT per month.',
   },
   {
-    category: 'Contact',
-    label: 'Provide Caller Name, Email & WhatsApp',
+    label: '2. Supply Caller Contact Details',
     prompt:
       'My name is John Smith. You can reach me at john.smith@abcplastics.mg and my WhatsApp phone number is +261 34 12 345 67.',
   },
   {
-    category: 'Scheduling',
-    label: 'Book Demo Call (Tomorrow 10:30 AM Mumbai)',
+    label: '3. Book Simulated Meeting (Tomorrow 10:30 AM Mumbai)',
     prompt:
       'Can we schedule a sales meeting for tomorrow at 10:30 AM joining from Mumbai, India?',
   },
   {
-    category: 'Validation',
-    label: 'Test Ambiguous "930 IST" Timezone Rule',
-    prompt: 'I would like to book a meeting for Friday at 930 IST.',
+    label: '4. Test "930 IST" Ambiguity Guardrail',
+    prompt:
+      'I would like to book a meeting for Friday at 930 IST.',
   },
   {
-    category: 'Financials',
-    label: 'Ask 2025 Revenue ($62M vs $63M) & Scale',
+    label: '5. Ask 2025 Revenue ($62M vs $63M) & Scale',
     prompt:
       'What is Aprirose Trading’s 2025 turnover, annual polymer volume, and total employee headcount?',
   },
   {
-    category: 'Technical',
-    label: 'Ask Polyurethane vs PVC / PET Boundary',
+    label: '6. Ask Polyurethane vs PVC/PET Boundary',
     prompt:
       'Which polyurethanes do you supply, and are PVC or PET considered polyurethanes?',
   },
   {
-    category: 'Directory',
-    label: 'Global Offices & Fax Policy',
-    prompt: 'Where are your offices located and what is your London fax number?',
+    label: '7. Ask Global Offices & Fax Number',
+    prompt:
+      'Where are your offices located and what is your London fax number?',
   },
   {
-    category: 'Handoff',
-    label: 'Request Transfer to Human Representative',
-    prompt: 'Could I please speak to a human representative from the sales team?',
+    label: '8. Request Human Handoff',
+    prompt:
+      'Could I please speak to a human representative from the sales team?',
   },
 ];
 
 export default function App() {
-  const [activeWorkspace, setActiveWorkspace] = useState<
-    'receptionist' | 'crm' | 'meetings' | 'knowledge'
-  >('receptionist');
-
-  // Voice Engine State
+  // Engine & Connection State
   const [engineMode, setEngineMode] = useState<'gemini-live' | 'browser-voice'>('browser-voice');
   const [geminiApiKey, setGeminiApiKey] = useState<string>(
     () => localStorage.getItem('aprirose_gemini_api_key') || ''
@@ -165,29 +101,21 @@ export default function App() {
   const [geminiModel, setGeminiModel] = useState<string>('gemini-3.8-live');
   const [geminiVoice, setGeminiVoice] = useState<string>('Aoede');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showPromptsBar, setShowPromptsBar] = useState(true);
 
-  const [callStatus, setCallStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>(
-    'disconnected'
-  );
-  const [statusDetail, setStatusDetail] = useState<string>('Ready');
-  const [callSeconds, setCallSeconds] = useState<number>(0);
+  const [callStatus, setCallStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [statusDetail, setStatusDetail] = useState<string>('Ready to start voice call');
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isTtsEnabled, setIsTtsEnabled] = useState(true);
   const [isListeningStt, setIsListeningStt] = useState(false);
   const [isSpeakingTts, setIsSpeakingTts] = useState(false);
-  const [audioLevels, setAudioLevels] = useState<{ input: number; output: number }>({
-    input: 0,
-    output: 0,
-  });
+  const [audioLevels, setAudioLevels] = useState<{ input: number; output: number }>({ input: 0, output: 0 });
 
-  // Active Call & Qualification Data
-  const [activeLeadId, setActiveLeadId] = useState<string>('lead-live-session');
+  // Conversation & CRM State
   const [transcript, setTranscript] = useState<TranscriptTurn[]>([
     {
       id: 'welcome-turn',
       role: 'receptionist',
-      text: 'Welcome to Aprirose Trading Limited. I can assist you with polymer or chemical procurement, technical grade references, global office routing, or scheduling a commercial meeting. How may I help you today?',
+      text: 'Hi! Welcome to Aprirose Trading Limited. I can assist you with requesting a polymer or chemical quotation, learning about Aprirose’s grades, producers, global offices, and compliance policies, or scheduling a simulated sales meeting. How can we help you today?',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -201,42 +129,9 @@ export default function App() {
   const [humanPaused, setHumanPaused] = useState(false);
   const [groundedClaims, setGroundedClaims] = useState<GroundedClaim[]>([]);
 
-  // CRM & Calendar State
-  const [crmLeads, setCrmLeads] = useState<CrmLeadRecord[]>(() => {
-    const saved = localStorage.getItem('aprirose_crm_leads_v2');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        // fallback
-      }
-    }
-    return INITIAL_CRM_LEADS;
-  });
-  const [crmViewMode, setCrmViewMode] = useState<'table' | 'kanban'>('table');
-  const [calendarViewMode, setCalendarViewMode] = useState<'week' | 'agenda'>('week');
-  const [crmSearch, setCrmSearch] = useState('');
-  const [crmOfficeFilter, setCrmOfficeFilter] = useState<string>('ALL');
-  const [selectedLead, setSelectedLead] = useState<CrmLeadRecord | null>(null);
-  const [selectedMeetingLead, setSelectedMeetingLead] = useState<CrmLeadRecord | null>(null);
-  const [showQuickBookModal, setShowQuickBookModal] = useState(false);
-  const [quickBookForm, setQuickBookForm] = useState({
-    company: '',
-    contactName: '',
-    email: '',
-    phone: '',
-    material: '',
-    date: 'Monday, 2 Nov 2026',
-    clockTime: '10:30',
-    amPm: 'AM' as 'AM' | 'PM',
-    timezone: 'Asia/Kolkata',
-  });
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // Knowledge Base Sub-tab
-  const [kbSubTab, setKbSubTab] = useState<
-    'guardrails' | 'products' | 'mfi' | 'offices' | 'history' | 'compliance'
-  >('guardrails');
+  // Right Panel Tabs
+  const [activeRightTab, setActiveRightTab] = useState<'crm' | 'claims' | 'kb'>('crm');
+  const [kbSubTab, setKbSubTab] = useState<'products' | 'mfi' | 'offices' | 'history' | 'compliance'>('products');
   const [copiedSummary, setCopiedSummary] = useState(false);
 
   // Refs
@@ -263,102 +158,11 @@ export default function App() {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript]);
 
-  useEffect(() => {
-    if (callStatus !== 'connected') return;
-    const timer = setInterval(() => {
-      setCallSeconds((s) => s + 1);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [callStatus]);
-
-  useEffect(() => {
-    fetch('/api/crm/leads')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.ok && Array.isArray(data.leads) && data.leads.length > 0) {
-          setCrmLeads(data.leads);
-        } else {
-          syncLeadsToBackend(crmLeads);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  const syncLeadsToBackend = (leadsToSave: CrmLeadRecord[]) => {
-    localStorage.setItem('aprirose_crm_leads_v2', JSON.stringify(leadsToSave));
-    fetch('/api/crm/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ leads: leadsToSave }),
-    }).catch(() => {});
-  };
-
-  useEffect(() => {
-    const hasAnyFact =
-      Object.values(buyerFacts).some((v) => Boolean(v)) || meetingState.status !== 'none';
-    if (!hasAnyFact) return;
-
-    const readiness = checkCommercialReadiness(buyerFacts);
-    const routing = inferAssignedOffice(buyerFacts);
-    const nowStamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
-
-    setCrmLeads((prev) => {
-      const existingIdx = prev.findIndex((l) => l.id === activeLeadId);
-      const updatedRecord: CrmLeadRecord = {
-        id: activeLeadId,
-        referenceCode: existingIdx >= 0 ? prev[existingIdx].referenceCode : 'APR-2026-845',
-        createdAt: existingIdx >= 0 ? prev[existingIdx].createdAt : nowStamp,
-        updatedAt: nowStamp,
-        stage:
-          readiness.isReady
-            ? 'Qualified for Review'
-            : existingIdx >= 0
-            ? prev[existingIdx].stage
-            : 'New Voice Intake',
-        assignedOffice: routing.office,
-        assignedOwner: routing.owner,
-        readinessScore: readiness.score,
-        isLiveSession: true,
-        callDurationSec: callSeconds || 45,
-        facts: { ...buyerFacts },
-        factEvidence: { ...factEvidence },
-        meeting: {
-          ...meetingState,
-          date: meetingState.date ? resolveDayKey(meetingState.date) : meetingState.date,
-        },
-        claims: [...groundedClaims],
-        notes:
-          existingIdx >= 0
-            ? prev[existingIdx].notes
-            : 'Captured via Aprirose Voice Receptionist.',
-      };
-
-      const nextList =
-        existingIdx >= 0
-          ? prev.map((item, i) => (i === existingIdx ? updatedRecord : item))
-          : [updatedRecord, ...prev];
-
-      syncLeadsToBackend(nextList);
-      return nextList;
-    });
-  }, [buyerFacts, meetingState, groundedClaims]);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3200);
-  };
-
-  const formatTimer = (totalSec: number) => {
-    const mins = Math.floor(totalSec / 60)
-      .toString()
-      .padStart(2, '0');
-    const secs = (totalSec % 60).toString().padStart(2, '0');
-    return `${mins}:${secs}`;
-  };
-
+  // Speak text using Browser Neural SpeechSynthesis (used in browser-voice mode)
   const speakText = (text: string) => {
     if (!isTtsEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
+    // Replace "Aprirose" with phonetic "Apree-rose" for TTS so it never slurs it as "Aprose"
     const cleanText = text
       .replace(/\*\*/g, '')
       .replace(/\bAprirose\b/gi, 'Apree-rose');
@@ -374,7 +178,7 @@ export default function App() {
 
     utterance.onstart = () => {
       setIsSpeakingTts(true);
-      setAudioLevels({ input: 0, output: 0.7 });
+      setAudioLevels({ input: 0, output: 0.65 });
     };
     utterance.onend = () => {
       setIsSpeakingTts(false);
@@ -388,6 +192,7 @@ export default function App() {
     window.speechSynthesis.speak(utterance);
   };
 
+  // Process a user message through the Grounded Engine (and/or send to Gemini Live)
   const handleCallerInput = (rawText: string, fromGeminiLiveTranscript = false) => {
     const trimmed = rawText.trim();
     if (!trimmed) return;
@@ -406,13 +211,7 @@ export default function App() {
     }
 
     if (result.updatedMeeting) {
-      setMeetingState((prev) => {
-        const next = { ...prev, ...result.updatedMeeting };
-        if (next.status === 'demo_booked') {
-          showToast(`Demo Meeting Booked: ${next.date} at ${next.clockTime} ${next.amPm} (${next.timezone})`);
-        }
-        return next;
-      });
+      setMeetingState((prev) => ({ ...prev, ...result.updatedMeeting }));
     }
 
     if (result.humanHandoffTriggered) {
@@ -435,12 +234,14 @@ export default function App() {
         extractedKeys,
       };
 
+      // If connected to Gemini Live API via WebSocket, send text to the live session
       if (engineMode === 'gemini-live' && callStatus === 'connected' && liveClientRef.current) {
         setTranscript((prev) => [...prev, callerTurn]);
         liveClientRef.current.sendTextMessage(trimmed);
         return;
       }
 
+      // Otherwise respond immediately with our Grounded Aprirose Receptionist Engine + Neural TTS
       const receptionistTurn: TranscriptTurn = {
         id: `rec-${Date.now() + 1}`,
         role: 'receptionist',
@@ -454,6 +255,7 @@ export default function App() {
     }
   };
 
+  // Start or Stop Call
   const handleToggleCall = async () => {
     if (callStatus === 'connected' || callStatus === 'connecting') {
       if (liveClientRef.current) {
@@ -474,12 +276,11 @@ export default function App() {
       setIsListeningStt(false);
       setIsSpeakingTts(false);
       setCallStatus('disconnected');
-      setStatusDetail('Call Ended');
+      setStatusDetail('Call ended');
       return;
     }
 
-    setCallSeconds(0);
-
+    // Starting a call
     if (engineMode === 'gemini-live') {
       if (!geminiApiKey.trim()) {
         setShowSettingsModal(true);
@@ -500,7 +301,7 @@ export default function App() {
             if (last && last.role === 'caller' && last.id.startsWith('live-user-')) {
               return [
                 ...prev.slice(0, -1),
-                { ...last, text: isFinal ? text : `${last.text} ${text}`.trim() },
+                { ...last, text: isFinal ? text : `${ last.text } ${text}`.trim() },
               ];
             }
             return [
@@ -543,17 +344,7 @@ export default function App() {
           if (evidence) setFactEvidence((prev) => ({ ...prev, ...evidence }));
         },
         onMeetingUpdated: (meeting) => {
-          setMeetingState((prev) => {
-            const next = {
-              ...prev,
-              ...meeting,
-              date: meeting.date ? resolveDayKey(meeting.date) : prev.date,
-            };
-            if (next.status === 'demo_booked') {
-              showToast(`Demo Meeting Booked on Calendar: ${next.date}`);
-            }
-            return next;
-          });
+          setMeetingState((prev) => ({ ...prev, ...meeting }));
         },
         onHumanHandoff: (paused) => {
           setHumanPaused(paused);
@@ -567,11 +358,12 @@ export default function App() {
       try {
         await client.connect(geminiApiKey.trim(), geminiModel, geminiVoice);
       } catch {
-        // handled in callback
+        // Error already handled in callback
       }
     } else {
+      // Browser Voice Mode (Web Speech API STT + Neural TTS)
       setCallStatus('connected');
-      setStatusDetail('Active Voice Call');
+      setStatusDetail('Live Browser Voice Call Active');
       speakText(
         'Welcome to Aprirose Trading Limited. How can I help you with your polymer or chemical requirements today?'
       );
@@ -583,7 +375,7 @@ export default function App() {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setStatusDetail('Active Call');
+      setStatusDetail('Voice Call Active (Use scenario chips or text input; SpeechRecognition unsupported in this browser)');
       return;
     }
 
@@ -592,7 +384,10 @@ export default function App() {
     recognition.continuous = true;
     recognition.interimResults = false;
 
-    recognition.onstart = () => setIsListeningStt(true);
+    recognition.onstart = () => {
+      setIsListeningStt(true);
+    };
+
     recognition.onresult = (event: any) => {
       const lastResult = event.results[event.results.length - 1];
       if (lastResult && lastResult.isFinal) {
@@ -602,8 +397,14 @@ export default function App() {
         }
       }
     };
-    recognition.onerror = () => setIsListeningStt(false);
-    recognition.onend = () => setIsListeningStt(false);
+
+    recognition.onerror = () => {
+      setIsListeningStt(false);
+    };
+
+    recognition.onend = () => {
+      setIsListeningStt(false);
+    };
 
     try {
       recognition.start();
@@ -632,1513 +433,862 @@ export default function App() {
     }
   };
 
-  const handleStartFreshCallSession = () => {
-    const newId = `lead-live-${Date.now()}`;
-    setActiveLeadId(newId);
+  const handleResetSession = () => {
     setBuyerFacts({});
     setFactEvidence({});
     setMeetingState({ status: 'none', validationNotes: [] });
     setHumanPaused(false);
     setGroundedClaims([]);
-    setCallSeconds(0);
     setTranscript([
       {
         id: `welcome-${Date.now()}`,
         role: 'receptionist',
-        text: 'Welcome to Aprirose Trading Limited. How can we assist you with your polymer or chemical inquiry today?',
+        text: 'Hi! Welcome to Aprirose Trading Limited. How can we help you today?',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
-    showToast('New caller session initialized');
-  };
-
-  const handleUpdateLeadStage = (leadId: string, newStage: CrmStage) => {
-    setCrmLeads((prev) => {
-      const next = prev.map((l) =>
-        l.id === leadId
-          ? {
-              ...l,
-              stage: newStage,
-              updatedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
-            }
-          : l
-      );
-      syncLeadsToBackend(next);
-      return next;
-    });
-    if (selectedLead && selectedLead.id === leadId) {
-      setSelectedLead((prev) => (prev ? { ...prev, stage: newStage } : null));
-    }
-    showToast(`Stage updated to ${newStage}`);
-  };
-
-  // Open Quick Book Modal pre-populated with current active caller facts (or clicked calendar slot)
-  const openQuickBookModal = (dayKey?: string, clockTime?: string, amPm?: 'AM' | 'PM') => {
-    setQuickBookForm({
-      company: buyerFacts.company || 'ABC Plastics Ltd.',
-      contactName: buyerFacts.contactName || 'John Smith',
-      email: buyerFacts.email || 'john.smith@abcplastics.mg',
-      phone: buyerFacts.phone || '+261 34 12 345 67',
-      material: buyerFacts.material || 'PP Homopolymer (PPH) — Raffia (100 MT)',
-      date: dayKey || (meetingState.date ? resolveDayKey(meetingState.date) : 'Monday, 2 Nov 2026'),
-      clockTime: clockTime || meetingState.clockTime || '10:30',
-      amPm: amPm || (meetingState.amPm === 'PM' ? 'PM' : 'AM'),
-      timezone:
-        meetingState.timezone && !meetingState.timezone.includes('Ambiguous')
-          ? meetingState.timezone
-          : 'Asia/Kolkata',
-    });
-    setShowQuickBookModal(true);
-  };
-
-  const handleConfirmQuickBook = (e: React.FormEvent) => {
-    e.preventDefault();
-    const updatedFacts: BuyerFacts = {
-      ...buyerFacts,
-      company: quickBookForm.company.trim(),
-      contactName: quickBookForm.contactName.trim(),
-      email: quickBookForm.email.trim(),
-      phone: quickBookForm.phone.trim(),
-      material: quickBookForm.material.trim(),
-    };
-    const updatedMeeting: SimulatedMeetingState = {
-      status: 'demo_booked',
-      date: quickBookForm.date,
-      clockTime: quickBookForm.clockTime,
-      amPm: quickBookForm.amPm,
-      timezone: quickBookForm.timezone,
-      validationNotes: [],
-      confirmedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setBuyerFacts(updatedFacts);
-    setMeetingState(updatedMeeting);
-    setShowQuickBookModal(false);
-
-    const confirmMsg = `Your SIMULATED / DEMO MEETING is now confirmed and saved as "Demo booked" in the demo CRM calendar for ${updatedMeeting.date} at ${updatedMeeting.clockTime} ${updatedMeeting.amPm} (${updatedMeeting.timezone}) with ${updatedFacts.contactName} from ${updatedFacts.company}.`;
-    setTranscript((prev) => [
-      ...prev,
-      {
-        id: `rec-book-${Date.now()}`,
-        role: 'receptionist',
-        text: confirmMsg,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      },
-    ]);
-    speakText(confirmMsg);
-    showToast(`Demo Meeting Booked on Calendar: ${updatedMeeting.date} at ${updatedMeeting.clockTime} ${updatedMeeting.amPm}`);
-  };
-
-  const handleResetDemoToDefaults = () => {
-    setActiveLeadId('lead-live-session');
-    setBuyerFacts({});
-    setFactEvidence({});
-    setMeetingState({ status: 'none', validationNotes: [] });
-    setHumanPaused(false);
-    setGroundedClaims([]);
-    setCallSeconds(0);
-    setTranscript([
-      {
-        id: `welcome-${Date.now()}`,
-        role: 'receptionist',
-        text: 'Welcome to Aprirose Trading Limited. I can assist you with polymer or chemical procurement, technical grade references, global office routing, or scheduling a commercial meeting. How may I help you today?',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      },
-    ]);
-    setCrmLeads(INITIAL_CRM_LEADS);
-    syncLeadsToBackend(INITIAL_CRM_LEADS);
-    setSelectedLead(null);
-    setSelectedMeetingLead(null);
-    showToast('Demo CRM & Calendar reset to clean initial baseline');
-  };
-
-  const handleExportCrmCsv = () => {
-    const headers = [
-      'Reference',
-      'Stage',
-      'Assigned Desk',
-      'Company',
-      'Country',
-      'Buyer Type',
-      'Contact Name',
-      'Email',
-      'Phone',
-      'Material',
-      'MFI / Spec',
-      'Order Quantity',
-      'Monthly Volume',
-      'Discharge Port',
-      'Incoterm',
-      'Payment Term',
-      'Meeting Status',
-      'Meeting Date',
-      'Meeting Time',
-      'Timezone',
-    ];
-    const rows = crmLeads.map((l) => [
-      l.referenceCode,
-      l.stage,
-      l.assignedOffice,
-      l.facts.company || '',
-      l.facts.companyCountry || '',
-      l.facts.buyerType || '',
-      l.facts.contactName || '',
-      l.facts.email || '',
-      l.facts.phone || '',
-      l.facts.material || '',
-      l.facts.mfi || '',
-      l.facts.quantity || '',
-      l.facts.monthlyVolume || '',
-      l.facts.dischargePort || '',
-      l.facts.shippingTermRequested || '',
-      l.facts.paymentTermsRequested || '',
-      l.meeting.status,
-      l.meeting.date || '',
-      l.meeting.clockTime ? `${l.meeting.clockTime} ${l.meeting.amPm || ''}` : '',
-      l.meeting.timezone || '',
-    ]);
-    const csvContent = [
-      headers.join(','),
-      ...rows.map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
-    ].join('\r\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `aprirose-commercial-pipeline-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('Exported commercial pipeline to CSV');
-  };
-
-  const handleRescheduleLeadSlot = (
-    leadId: string,
-    newDate: string,
-    newClock: string,
-    newAmPm: 'AM' | 'PM',
-    newTz: string
-  ) => {
-    if (leadId === activeLeadId) {
-      setMeetingState((prev) => ({
-        ...prev,
-        status: 'demo_booked',
-        date: newDate,
-        clockTime: newClock,
-        amPm: newAmPm,
-        timezone: newTz,
-      }));
-    }
-    setCrmLeads((prev) => {
-      const next = prev.map((l) =>
-        l.id === leadId
-          ? {
-              ...l,
-              meeting: {
-                ...l.meeting,
-                status: 'demo_booked' as const,
-                date: newDate,
-                clockTime: newClock,
-                amPm: newAmPm,
-                timezone: newTz,
-              },
-            }
-          : l
-      );
-      syncLeadsToBackend(next);
-      return next;
-    });
-    setSelectedMeetingLead((prev) =>
-      prev && prev.id === leadId
-        ? {
-            ...prev,
-            meeting: {
-              ...prev.meeting,
-              status: 'demo_booked',
-              date: newDate,
-              clockTime: newClock,
-              amPm: newAmPm,
-              timezone: newTz,
-            },
-          }
-        : prev
-    );
-    showToast(`Meeting rescheduled to ${newDate} at ${newClock} ${newAmPm} (${newTz})`);
-  };
-
-  const handleCancelLeadMeeting = (leadId: string) => {
-    if (leadId === activeLeadId) {
-      setMeetingState({
-        status: 'cancelled',
-        validationNotes: ['Cancelled by user in demo calendar.'],
-      });
-    }
-    setCrmLeads((prev) => {
-      const next = prev.map((l) =>
-        l.id === leadId
-          ? {
-              ...l,
-              meeting: { ...l.meeting, status: 'cancelled' as const },
-            }
-          : l
-      );
-      syncLeadsToBackend(next);
-      return next;
-    });
-    setSelectedMeetingLead(null);
-    showToast('Simulated meeting marked as cancelled');
-  };
-
-  const handleDownloadIcs = (lead: CrmLeadRecord) => {
-    const content = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//Aprirose Trading Limited//Demo Voice Receptionist//EN',
-      'BEGIN:VEVENT',
-      `UID:${lead.id}@aprirose.com`,
-      `SUMMARY:[SIMULATED DEMO] Aprirose Commercial Call - ${lead.facts.company || 'Buyer'}`,
-      `DESCRIPTION:Simulated CRM Demo Booking\\nReference: ${lead.referenceCode}\\nProduct: ${lead.facts.material || 'TBD'}\\nQuantity: ${lead.facts.quantity || 'TBD'}\\nAssigned Desk: ${lead.assignedOffice} (${lead.assignedOwner})\\nCaller Timezone: ${lead.meeting.timezone}`,
-      `LOCATION:Online / ${lead.assignedOffice}`,
-      'END:VEVENT',
-      'END:VCALENDAR',
-    ].join('\r\n');
-
-    const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${lead.referenceCode}-demo-meeting.ics`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast(`Downloaded ${lead.referenceCode}-demo-meeting.ics`);
   };
 
   const readiness = checkCommercialReadiness(buyerFacts);
-  const activeOfficeRouting = inferAssignedOffice(buyerFacts);
+  const meetingReadiness = checkSimulatedMeetingReadiness(buyerFacts, meetingState);
 
-  const formatLeadSummaryText = (
-    facts: BuyerFacts = buyerFacts,
-    meeting: SimulatedMeetingState = meetingState
-  ) => {
+  const formatLeadSummaryText = () => {
     return [
       'New Buyer Inquiry — Aprirose Trading Limited',
-      `• Company: ${facts.company || 'Pending'}`,
-      `• Country: ${facts.companyCountry || 'Pending'}`,
-      `• Buyer Type: ${facts.buyerType || 'Pending'}`,
-      `• Product: ${facts.material || 'Pending'}${facts.application ? ` (${facts.application})` : ''}`,
-      `• Grade / MFI: ${[facts.requestedGrade, facts.mfi, facts.preferredProducer].filter(Boolean).join(' | ') || 'For commercial discussion'}`,
-      `• Order Quantity: ${facts.quantity || 'Pending'}`,
-      `• Monthly Volume: ${facts.monthlyVolume || 'Not specified'}`,
-      `• Payment Term: ${facts.paymentTermsRequested || 'Not specified'}`,
-      `• Shipping Term: ${facts.shippingTermRequested || 'Not specified'}`,
-      `• Destination: ${[facts.dischargePort, facts.destinationCity, facts.destinationCountry].filter(Boolean).join(', ') || 'Pending'}`,
-      `• Contact: ${facts.contactName || 'Pending'}`,
-      `• Email: ${facts.email || 'Pending'}`,
-      `• WhatsApp / Phone: ${facts.phone || 'Pending'}`,
+      `• Company: ${buyerFacts.company || 'Pending'}`,
+      `• Country: ${buyerFacts.companyCountry || 'Pending'}`,
+      `• Buyer Type: ${buyerFacts.buyerType || 'Pending'}`,
+      `• Product: ${buyerFacts.material || 'Pending'}${buyerFacts.application ? ` (${buyerFacts.application})` : ''}`,
+      `• Grade / MFI: ${[buyerFacts.requestedGrade, buyerFacts.mfi, buyerFacts.preferredProducer].filter(Boolean).join(' | ') || 'For commercial discussion'}`,
+      `• Order Quantity: ${buyerFacts.quantity || 'Pending (Required for commercial readiness)'}`,
+      `• Monthly Volume: ${buyerFacts.monthlyVolume || 'Not specified'}`,
+      `• Payment Term: ${buyerFacts.paymentTermsRequested || 'Not specified'}`,
+      `• Shipping Term: ${buyerFacts.shippingTermRequested || 'Not specified'}`,
+      `• Destination: ${[buyerFacts.dischargePort, buyerFacts.destinationCity, buyerFacts.destinationCountry].filter(Boolean).join(', ') || 'Pending'}`,
+      `• Contact: ${buyerFacts.contactName || 'Pending'}`,
+      `• Email: ${buyerFacts.email || 'Pending'}`,
+      `• WhatsApp / Phone: ${buyerFacts.phone || 'Pending'}`,
       `• Simulated Meeting: ${
-        meeting.status === 'demo_booked'
-          ? `DEMO BOOKED — ${meeting.date} at ${meeting.clockTime} ${meeting.amPm || ''} (${meeting.timezone})`
+        meetingState.status === 'demo_booked'
+          ? `DEMO BOOKED — ${meetingState.date} at ${meetingState.clockTime} ${meetingState.amPm || ''} (${meetingState.timezone})`
           : 'Not booked'
       }`,
     ].join('\n');
   };
 
-  const handleCopySummary = (facts?: BuyerFacts, meeting?: SimulatedMeetingState) => {
-    navigator.clipboard.writeText(formatLeadSummaryText(facts, meeting));
+  const handleCopySummary = () => {
+    navigator.clipboard.writeText(formatLeadSummaryText());
     setCopiedSummary(true);
-    showToast('Lead summary copied to clipboard');
     setTimeout(() => setCopiedSummary(false), 2000);
   };
 
-  const filteredLeads = crmLeads.filter((lead) => {
-    const matchesOffice = crmOfficeFilter === 'ALL' || lead.assignedOffice === crmOfficeFilter;
-    const q = crmSearch.toLowerCase().trim();
-    if (!q) return matchesOffice;
-    const hay = `${lead.referenceCode} ${lead.facts.company || ''} ${lead.facts.companyCountry || ''} ${lead.facts.material || ''} ${lead.facts.contactName || ''} ${lead.facts.dischargePort || ''}`.toLowerCase();
-    return matchesOffice && hay.includes(q);
-  });
-
-  const bookedMeetingsList = crmLeads.filter(
-    (l) => l.meeting.status === 'demo_booked' || l.meeting.status === 'collecting'
-  );
-
-  const stageBadgeColor = (stage: CrmStage) => {
-    switch (stage) {
-      case 'New Voice Intake':
-        return 'bg-slate-100 text-slate-700 border-slate-200';
-      case 'Qualified for Review':
-        return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'Sourcing & TDS Review':
-        return 'bg-indigo-50 text-indigo-700 border-indigo-200';
-      case 'Quotation Issued':
-        return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'Won / Allocated':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-    }
-  };
-
   return (
-    <div className="min-h-screen flex bg-[#F8FAFC] text-[#0F172A]">
-      {/* SUBTLE TOAST */}
-      {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-lg shadow-lg border border-slate-800 flex items-center gap-2 text-xs font-medium">
-          <CheckCircle2 className="w-4 h-4 text-blue-400" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
-      {/* CLEAN WHITE ENTERPRISE SIDEBAR */}
-      <aside className="w-60 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 select-none">
-        <div>
-          <div className="h-14 px-5 border-b border-slate-200 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-md bg-blue-600 flex items-center justify-center font-bold text-white text-xs tracking-tight">
-                AT
+    <div className="min-h-screen flex flex-col bg-[#F4F7F6] text-[#0D2B2F]">
+      {/* TOP CORPORATE HEADER */}
+      <header className="bg-[#0D3438] text-white border-b border-[#1B4B50] sticky top-0 z-30 shadow-sm">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-4">
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2.5">
+                <span className="tracking-[0.28em] font-semibold text-sm sm:text-base text-white">
+                  APRIROSE
+                </span>
+                <span className="h-3.5 w-[1px] bg-[#B08448]" />
+                <span className="text-xs uppercase tracking-[0.16em] text-[#D8C3A5] font-medium">
+                  Trading Limited
+                </span>
               </div>
-              <div>
-                <div className="font-bold text-xs tracking-wider text-slate-900 uppercase">
-                  Aprirose Trading
-                </div>
-                <div className="text-[11px] text-slate-500">Commercial Desk</div>
-              </div>
+              <p className="text-xs text-[#A3C1C4] mt-0.5">
+                AI Voice Receptionist & Live Buyer Qualification Desk · Snapshot 25 Oct 2026 (Rev 1529929)
+              </p>
             </div>
           </div>
 
-          <div className="p-3">
-            <div className="px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Workspace
+          {/* Engine Mode Switcher & Controls */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="inline-flex rounded-lg bg-[#082225] p-1 border border-[#1E4E54]">
+              <button
+                onClick={() => setEngineMode('browser-voice')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                  engineMode === 'browser-voice'
+                    ? 'bg-[#B08448] text-white shadow-xs'
+                    : 'text-[#A3C1C4] hover:text-white'
+                }`}
+              >
+                <Volume2 className="w-3.5 h-3.5" />
+                Instant Grounded Voice
+              </button>
+              <button
+                onClick={() => {
+                  setEngineMode('gemini-live');
+                  if (!geminiApiKey) setShowSettingsModal(true);
+                }}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                  engineMode === 'gemini-live'
+                    ? 'bg-[#B08448] text-white shadow-xs'
+                    : 'text-[#A3C1C4] hover:text-white'
+                }`}
+              >
+                <Radio className="w-3.5 h-3.5" />
+                Gemini Live API ({geminiModel})
+              </button>
             </div>
-            <nav className="space-y-0.5">
-              <button
-                onClick={() => setActiveWorkspace('receptionist')}
-                className={`w-full flex items-center justify-between px-2.5 py-2 rounded-md text-xs font-medium transition cursor-pointer ${
-                  activeWorkspace === 'receptionist'
-                    ? 'bg-blue-50 text-blue-700 font-semibold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <span className="flex items-center gap-2.5">
-                  <Phone className="w-4 h-4" />
-                  Voice Receptionist
-                </span>
-                {callStatus === 'connected' && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                )}
-              </button>
 
-              <button
-                onClick={() => setActiveWorkspace('crm')}
-                className={`w-full flex items-center justify-between px-2.5 py-2 rounded-md text-xs font-medium transition cursor-pointer ${
-                  activeWorkspace === 'crm'
-                    ? 'bg-blue-50 text-blue-700 font-semibold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <span className="flex items-center gap-2.5">
-                  <Kanban className="w-4 h-4" />
-                  CRM Pipeline
-                </span>
-                <span className="font-mono-tech text-[11px] text-slate-500">{crmLeads.length}</span>
-              </button>
-
-              <button
-                onClick={() => setActiveWorkspace('meetings')}
-                className={`w-full flex items-center justify-between px-2.5 py-2 rounded-md text-xs font-medium transition cursor-pointer ${
-                  activeWorkspace === 'meetings'
-                    ? 'bg-blue-50 text-blue-700 font-semibold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <span className="flex items-center gap-2.5">
-                  <Calendar className="w-4 h-4" />
-                  Meetings Calendar
-                </span>
-                <span
-                  className={`font-mono-tech text-[11px] px-1.5 py-0.5 rounded ${
-                    meetingState.status === 'demo_booked'
-                      ? 'bg-blue-600 text-white font-semibold'
-                      : 'text-slate-500'
-                  }`}
-                >
-                  {bookedMeetingsList.length}
-                </span>
-              </button>
-
-              <button
-                onClick={() => setActiveWorkspace('knowledge')}
-                className={`w-full flex items-center justify-between px-2.5 py-2 rounded-md text-xs font-medium transition cursor-pointer ${
-                  activeWorkspace === 'knowledge'
-                    ? 'bg-blue-50 text-blue-700 font-semibold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <span className="flex items-center gap-2.5">
-                  <BookOpen className="w-4 h-4" />
-                  Knowledge Base
-                </span>
-              </button>
-            </nav>
-          </div>
-
-          <div className="px-3 py-2 border-t border-slate-100">
-            <div className="px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Regional Desks
-            </div>
-            <div className="space-y-0.5 text-xs">
-              {[
-                { city: 'London HQ', code: 'UK', active: activeOfficeRouting.office === 'London HQ' },
-                { city: 'Dubai (DMCC)', code: 'AE', active: activeOfficeRouting.office === 'Dubai Branch (DMCC)' },
-                { city: 'Nairobi Hub', code: 'KE', active: activeOfficeRouting.office === 'Nairobi Regional Hub' },
-                { city: 'Mumbai Desk', code: 'IN', active: activeOfficeRouting.office === 'Mumbai Desk' },
-                { city: 'Incheon Office', code: 'KR', active: activeOfficeRouting.office === 'Incheon Office' },
-                { city: 'Ha Noi Desk', code: 'VN', active: activeOfficeRouting.office === 'Ha Noi Desk' },
-              ].map((desk) => (
-                <div
-                  key={desk.city}
-                  className={`flex items-center justify-between px-2.5 py-1.5 rounded-md ${
-                    desk.active
-                      ? 'bg-blue-50/70 text-blue-700 font-medium'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  <span>{desk.city}</span>
-                  <span className="font-mono-tech text-[10px] text-slate-400">{desk.code}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="p-3 border-t border-slate-200 bg-slate-50/60">
-          <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1.5 px-1">
-            <span className="font-medium">Voice Engine</span>
             <button
               onClick={() => setShowSettingsModal(true)}
-              className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
+              className="px-3 py-1.5 rounded-lg bg-[#154348] hover:bg-[#1D555B] text-xs font-medium text-[#E2ECEB] border border-[#276066] flex items-center gap-1.5 transition cursor-pointer"
+              title="Configure Gemini Live API Key & Voice"
             >
-              <Settings className="w-3 h-3" />
-              API Key
+              <Settings className="w-3.5 h-3.5 text-[#D8C3A5]" />
+              <span>{geminiApiKey ? 'API Key Configured' : 'Set Gemini API Key'}</span>
             </button>
-          </div>
-          <div className="grid grid-cols-2 gap-1 bg-slate-200/70 p-0.5 rounded-md">
+
             <button
-              onClick={() => setEngineMode('browser-voice')}
-              className={`py-1 px-2 rounded text-[11px] font-medium transition cursor-pointer ${
-                engineMode === 'browser-voice'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
+              onClick={handleResetSession}
+              className="px-2.5 py-1.5 rounded-lg bg-[#154348] hover:bg-[#1D555B] text-xs text-[#E2ECEB] border border-[#276066] flex items-center gap-1 transition cursor-pointer"
+              title="Reset Call & CRM Intake"
             >
-              Browser TTS
-            </button>
-            <button
-              onClick={() => {
-                setEngineMode('gemini-live');
-                if (!geminiApiKey) setShowSettingsModal(true);
-              }}
-              className={`py-1 px-2 rounded text-[11px] font-medium transition cursor-pointer ${
-                engineMode === 'gemini-live'
-                  ? 'bg-white text-blue-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Gemini Live
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Reset</span>
             </button>
           </div>
         </div>
-      </aside>
+      </header>
 
-      {/* MAIN WORKSPACE */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* TOP HEADER BAR */}
-        <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between gap-4 sticky top-0 z-20">
-          <div className="flex items-center gap-3">
-            <h1 className="text-sm font-semibold text-slate-900">
-              {activeWorkspace === 'receptionist' && 'Voice Receptionist & Real-Time Qualification'}
-              {activeWorkspace === 'crm' && 'Commercial Inquiries & Deal Pipeline'}
-              {activeWorkspace === 'meetings' && 'Commercial Meetings Calendar (Week of 2–6 Nov 2026)'}
-              {activeWorkspace === 'knowledge' && 'Corporate Knowledge Base & Compliance Reference'}
-            </h1>
-            <span className="text-xs text-slate-300">|</span>
-            <span className="text-xs text-slate-500">
-              Aprirose Trading Limited (London · Dubai · Nairobi · Mumbai · Incheon · Ha Noi)
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => openQuickBookModal()}
-              className="px-3 py-1.5 rounded-md bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
-            >
-              <Calendar className="w-3.5 h-3.5 text-blue-600" />
-              Schedule Demo Slot
-            </button>
-
-            <button
-              onClick={handleStartFreshCallSession}
-              className="px-3 py-1.5 rounded-md bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5 text-slate-500" />
-              New Session
-            </button>
-
-            <button
-              onClick={handleResetDemoToDefaults}
-              className="px-3 py-1.5 rounded-md bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 text-xs font-medium transition cursor-pointer"
-              title="Reset CRM pipeline and calendar to clean default demo state"
-            >
-              Reset Demo
-            </button>
-
-            <button
-              onClick={() => {
-                const liveRecord = crmLeads.find((l) => l.id === activeLeadId) || crmLeads[0];
-                if (liveRecord) setSelectedLead(liveRecord);
-                setActiveWorkspace('crm');
-              }}
-              className="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
-            >
-              <span>View in CRM</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </header>
-
-        {/* WORKSPACE 1: VOICE RECEPTIONIST */}
-        {activeWorkspace === 'receptionist' && (
-          <div className="p-6 space-y-5 max-w-[1500px]">
-            {/* COMPACT HORIZONTAL CALL CONTROL BAR */}
-            <div className="bg-white border border-slate-200 rounded-lg px-5 py-3.5 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2.5">
+      {/* MAIN TWO-COLUMN WORKSPACE */}
+      <main className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-5 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* LEFT COLUMN (5 COLS): VOICE RECEPTIONIST CONSOLE & TRANSCRIPT */}
+        <section className="lg:col-span-5 flex flex-col gap-4">
+          {/* Interactive Voice Receptionist Call Card */}
+          <div className="bg-white rounded-2xl border border-[#D5E0DF] shadow-xs overflow-hidden">
+            <div className="bg-gradient-to-br from-[#0D3438] via-[#113F44] to-[#0A2629] p-5 text-white relative">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
                   <span
                     className={`w-2.5 h-2.5 rounded-full ${
                       callStatus === 'connected'
-                        ? 'bg-emerald-500 animate-pulse'
+                        ? 'bg-emerald-400 animate-pulse'
                         : callStatus === 'connecting'
-                        ? 'bg-amber-500 animate-ping'
-                        : 'bg-slate-300'
+                        ? 'bg-amber-400 animate-ping'
+                        : callStatus === 'error'
+                        ? 'bg-rose-400'
+                        : 'bg-slate-400'
                     }`}
                   />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-slate-900">
-                        London Inbound Line (+44 20 8951 0377)
-                      </span>
-                      <span className="font-mono-tech text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                        {formatTimer(callSeconds)}
-                      </span>
-                      {humanPaused && (
-                        <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                          Human Handoff Active (Intake Paused)
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {isSpeakingTts
-                        ? 'Receptionist speaking...'
-                        : isListeningStt
-                        ? 'Listening to microphone...'
-                        : statusDetail}
-                    </p>
-                  </div>
+                  <span className="text-xs font-mono-tech uppercase tracking-wider text-[#B8D2D5]">
+                    {statusDetail}
+                  </span>
                 </div>
 
-                {/* Clean 12-Bar Audio Level Meter */}
-                <div className="hidden md:flex items-center gap-0.5 h-6 px-3 border-l border-slate-200">
-                  {Array.from({ length: 12 }).map((_, i) => {
-                    const activeLevel = Math.max(audioLevels.input, audioLevels.output);
-                    const isActive =
-                      callStatus === 'connected' || isSpeakingTts || isListeningStt;
-                    const barHeight = isActive
-                      ? Math.max(
-                          4,
-                          Math.min(20, Math.round(activeLevel * 22 * ((i % 4) * 0.25 + 0.5)))
-                        )
-                      : 4;
-                    return (
-                      <div
-                        key={i}
-                        className={`w-1 rounded-full transition-all duration-150 ${
-                          isActive && activeLevel > 0.05 ? 'bg-blue-600' : 'bg-slate-200'
-                        }`}
-                        style={{ height: `${barHeight}px` }}
-                      />
-                    );
-                  })}
-                </div>
+                {humanPaused && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-500/20 text-amber-200 border border-amber-400/40">
+                    <UserCheck className="w-3.5 h-3.5" />
+                    Human Handoff Active (Intake Paused)
+                  </span>
+                )}
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleToggleMicMute}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 border transition cursor-pointer ${
-                    isMicMuted
-                      ? 'bg-red-50 border-red-200 text-red-700'
-                      : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                  }`}
-                >
-                  {isMicMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                  <span>{isMicMuted ? 'Mic Muted' : 'Mic On'}</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    const next = !isTtsEnabled;
-                    setIsTtsEnabled(next);
-                    if (!next && 'speechSynthesis' in window) {
-                      window.speechSynthesis.cancel();
-                      setIsSpeakingTts(false);
-                    }
-                  }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 border transition cursor-pointer ${
-                    !isTtsEnabled
-                      ? 'bg-amber-50 border-amber-200 text-amber-700'
-                      : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                  }`}
-                >
-                  {isTtsEnabled ? (
-                    <Volume2 className="w-3.5 h-3.5" />
-                  ) : (
-                    <VolumeX className="w-3.5 h-3.5" />
-                  )}
-                  <span>{isTtsEnabled ? 'Speaker On' : 'Muted'}</span>
-                </button>
-
-                <button
-                  onClick={handleToggleCall}
-                  className={`px-4 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
-                    callStatus === 'connected'
-                      ? 'bg-red-600 hover:bg-red-700 text-white'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
-                  }`}
-                >
-                  {callStatus === 'connected' ? (
+              {/* Central Voice Orb & Controls */}
+              <div className="flex flex-col items-center justify-center py-4">
+                <div className="relative flex items-center justify-center">
+                  {(callStatus === 'connected' || isSpeakingTts || isListeningStt) && (
                     <>
-                      <PhoneOff className="w-3.5 h-3.5" />
-                      <span>End Call</span>
-                    </>
-                  ) : (
-                    <>
-                      <Phone className="w-3.5 h-3.5" />
-                      <span>Start Voice Call</span>
+                      <div
+                        className="absolute w-28 h-28 rounded-full bg-[#B08448]/30 animate-pulse-ring"
+                        style={{
+                          transform: `scale(${1 + Math.max(audioLevels.input, audioLevels.output) * 0.45})`,
+                        }}
+                      />
+                      <div className="absolute w-24 h-24 rounded-full bg-emerald-400/15 animate-pulse" />
                     </>
                   )}
-                </button>
+
+                  <button
+                    onClick={handleToggleCall}
+                    className={`relative z-10 w-20 h-20 rounded-full flex flex-col items-center justify-center transition-all duration-200 shadow-lg cursor-pointer ${
+                      callStatus === 'connected'
+                        ? 'bg-rose-600 hover:bg-rose-700 text-white ring-4 ring-rose-400/30'
+                        : 'bg-[#B08448] hover:bg-[#9B713B] text-white ring-4 ring-[#B08448]/30'
+                    }`}
+                  >
+                    {callStatus === 'connected' ? (
+                      <>
+                        <PhoneOff className="w-7 h-7 mb-0.5" />
+                        <span className="text-[10px] font-semibold uppercase tracking-wider">End</span>
+                      </>
+                    ) : (
+                      <>
+                        <Phone className="w-7 h-7 mb-0.5" />
+                        <span className="text-[10px] font-semibold uppercase tracking-wider">Call</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="mt-4 text-center">
+                  <h2 className="text-lg font-serif-editorial font-semibold text-white">
+                    Aprirose London Reception & Commercial Desk
+                  </h2>
+                  <p className="text-xs text-[#A9C6C9] mt-0.5">
+                    {isSpeakingTts
+                      ? 'Receptionist speaking...'
+                      : isListeningStt
+                      ? 'Listening to caller microphone...'
+                      : callStatus === 'connected'
+                      ? 'Connected — Speak into your microphone or select a caller prompt below'
+                      : 'Click Call to start live voice session or test any buyer scenario below'}
+                  </p>
+                </div>
+
+                {/* Audio Toolbar */}
+                <div className="flex items-center gap-3 mt-4">
+                  <button
+                    onClick={handleToggleMicMute}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition cursor-pointer ${
+                      isMicMuted
+                        ? 'bg-rose-500/20 border-rose-400/40 text-rose-200'
+                        : 'bg-white/10 hover:bg-white/15 border-white/15 text-white'
+                    }`}
+                  >
+                    {isMicMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    {isMicMuted ? 'Mic Muted' : 'Mic Active'}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const next = !isTtsEnabled;
+                      setIsTtsEnabled(next);
+                      if (!next && 'speechSynthesis' in window) {
+                        window.speechSynthesis.cancel();
+                        setIsSpeakingTts(false);
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition cursor-pointer ${
+                      !isTtsEnabled
+                        ? 'bg-amber-500/20 border-amber-400/40 text-amber-200'
+                        : 'bg-white/10 hover:bg-white/15 border-white/15 text-white'
+                    }`}
+                  >
+                    {isTtsEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                    {isTtsEnabled ? 'Voice Audio On' : 'Voice Muted'}
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* TWO-COLUMN MAIN DESK */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* LEFT 7 COLS: CONVERSATION TRANSCRIPT & CALLER PROMPTS */}
-              <div className="lg:col-span-7 bg-white border border-slate-200 rounded-lg flex flex-col overflow-hidden">
-                <div className="border-b border-slate-200 bg-slate-50/70">
-                  <button
-                    onClick={() => setShowPromptsBar(!showPromptsBar)}
-                    className="w-full px-4 py-2.5 flex items-center justify-between text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
-                  >
-                    <span>Sample Caller Utterances (Click 1 → 2 → 3 in sequence to book a live demo meeting)</span>
-                    <ChevronDown
-                      className={`w-4 h-4 text-slate-400 transition-transform ${
-                        showPromptsBar ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </button>
-                  {showPromptsBar && (
-                    <div className="px-4 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                      {QUICK_SCENARIOS.map((sc, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => handleCallerInput(sc.prompt, false)}
-                          className="text-left px-3 py-1.5 rounded-md bg-white hover:bg-blue-50/60 border border-slate-200 hover:border-blue-300 transition flex items-center justify-between gap-2 cursor-pointer group"
-                        >
-                          <div className="min-w-0 flex items-center gap-2">
-                            <span className="text-[10px] font-mono-tech uppercase text-blue-600 font-medium shrink-0">
-                              {sc.category}
-                            </span>
-                            <span className="text-xs text-slate-700 group-hover:text-slate-900 truncate">
-                              {sc.label}
-                            </span>
-                          </div>
-                          <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-600 shrink-0" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Transcript Feed */}
-                <div className="p-5 flex-1 min-h-[420px] max-h-[500px] overflow-y-auto space-y-4">
-                  {transcript.map((turn) => (
-                    <div
-                      key={turn.id}
-                      className={`flex flex-col ${
-                        turn.role === 'caller' ? 'items-end' : 'items-start'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-1 px-0.5">
-                        <span className="text-[11px] font-medium text-slate-500">
-                          {turn.role === 'caller' ? 'Caller' : 'Aprirose Receptionist'}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono-tech">
-                          {turn.timestamp}
-                        </span>
-                        {turn.role === 'receptionist' && (
-                          <button
-                            onClick={() => speakText(turn.text)}
-                            className="text-slate-400 hover:text-blue-600 cursor-pointer"
-                            title="Replay audio"
-                          >
-                            <Volume2 className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-
-                      <div
-                        className={`max-w-[85%] rounded-lg px-3.5 py-2.5 text-xs sm:text-sm leading-relaxed ${
-                          turn.role === 'caller'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-slate-50 text-slate-800 border border-slate-200'
-                        }`}
-                      >
-                        <p>{turn.text}</p>
-
-                        {turn.extractedKeys && turn.extractedKeys.length > 0 && (
-                          <div className="mt-2 pt-1.5 border-t border-blue-500/40 flex flex-wrap items-center gap-1">
-                            {turn.extractedKeys.map((k) => (
-                              <span
-                                key={k}
-                                className="text-[10px] font-mono-tech px-1.5 py-0.5 rounded bg-blue-700 text-blue-100"
-                              >
-                                {k}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  <div ref={transcriptEndRef} />
-                </div>
-
-                {/* Input Bar */}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!inputText.trim()) return;
-                    handleCallerInput(inputText, false);
-                    setInputText('');
-                  }}
-                  className="p-3 bg-white border-t border-slate-200 flex items-center gap-2"
-                >
-                  <input
-                    type="text"
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    placeholder="Type a caller statement or speak into microphone..."
-                    className="flex-1 text-xs sm:text-sm px-3.5 py-2 rounded-md border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:border-blue-600"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    Send
-                  </button>
-                </form>
+            {/* Interactive Caller Scenario Chips */}
+            <div className="p-3.5 bg-[#EAF0EF] border-b border-[#D5E0DF]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#335C62] flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#B08448]" />
+                  Simulate Caller Voice Prompts (Tests KB Qualification & Guardrails)
+                </span>
               </div>
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_SCENARIOS.map((sc, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleCallerInput(sc.prompt, false)}
+                    className="text-left text-[11px] px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#0D3438] text-[#0D3438] hover:text-white border border-[#C6D6D5] transition font-medium cursor-pointer shadow-2xs"
+                  >
+                    {sc.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-              {/* RIGHT 5 COLS: SINGLE UNIFIED RFQ QUALIFICATION SHEET */}
-              <div className="lg:col-span-5 bg-white border border-slate-200 rounded-lg divide-y divide-slate-200 flex flex-col justify-between">
-                <div className="p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono-tech text-[11px] font-semibold text-blue-600">
-                          APR-2026-845
-                        </span>
-                        <span className="text-xs text-slate-400">·</span>
-                        <span className="text-xs text-slate-600">
-                          Desk: <strong className="text-slate-900">{activeOfficeRouting.office}</strong>
-                        </span>
-                      </div>
-                      <h3 className="text-sm font-semibold text-slate-900 mt-0.5">
-                        {buyerFacts.company || 'Live Buyer Qualification Record'}
-                      </h3>
-                    </div>
-
-                    <button
-                      onClick={() => handleCopySummary()}
-                      className="px-2.5 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
-                    >
-                      {copiedSummary ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          Copy Summary
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="text-slate-500">Qualification Completeness</span>
-                      <span className="font-mono-tech font-semibold text-slate-900">
-                        {readiness.score}%
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-600 transition-all duration-300"
-                        style={{ width: `${readiness.score}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Structured Key-Value Rows */}
-                <div className="p-4 space-y-2.5 text-xs flex-1">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    Buyer & Material Details
-                  </div>
-
-                  <div className="divide-y divide-slate-100">
-                    {[
-                      { label: 'Company', value: buyerFacts.company },
-                      { label: 'Country', value: buyerFacts.companyCountry },
-                      { label: 'Business Type', value: buyerFacts.buyerType },
-                      { label: 'Product / Material', value: buyerFacts.material },
-                      { label: 'Application', value: buyerFacts.application },
-                      {
-                        label: 'MFI / Producer',
-                        value: [buyerFacts.mfi, buyerFacts.preferredProducer]
-                          .filter(Boolean)
-                          .join(' · '),
-                        mono: true,
-                      },
-                      { label: 'Order Quantity', value: buyerFacts.quantity, mono: true },
-                      { label: 'Monthly Volume', value: buyerFacts.monthlyVolume, mono: true },
-                      {
-                        label: 'Discharge Port',
-                        value: [buyerFacts.dischargePort, buyerFacts.destinationCountry]
-                          .filter(Boolean)
-                          .join(', '),
-                      },
-                      {
-                        label: 'Terms (Payment / Incoterm)',
-                        value: [buyerFacts.paymentTermsRequested, buyerFacts.shippingTermRequested]
-                          .filter(Boolean)
-                          .join(' / '),
-                        mono: true,
-                      },
-                      { label: 'Contact Name', value: buyerFacts.contactName },
-                      { label: 'Email', value: buyerFacts.email, mono: true },
-                      { label: 'Phone / WhatsApp', value: buyerFacts.phone, mono: true },
-                    ].map((row) => (
-                      <div key={row.label} className="py-1.5 flex items-center justify-between gap-4">
-                        <span className="text-slate-500">{row.label}</span>
-                        <span
-                          className={`text-right truncate ${
-                            row.value ? 'font-medium text-slate-900' : 'text-slate-300'
-                          } ${row.mono ? 'font-mono-tech' : ''}`}
-                        >
-                          {row.value || '—'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Simulated Meeting Section with Calendar Actions */}
-                <div className="p-4 bg-slate-50/50 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                      Simulated Meeting Slot
+            {/* Live Conversation Transcript */}
+            <div className="p-4 h-[390px] overflow-y-auto space-y-3 bg-[#F9FBFA]">
+              {transcript.map((turn) => (
+                <div
+                  key={turn.id}
+                  className={`flex flex-col ${
+                    turn.role === 'caller' ? 'items-end' : 'items-start'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1 px-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-[#4A6B70]">
+                      {turn.role === 'caller' ? 'Caller (Buyer)' : 'Aprirose Voice Receptionist'}
                     </span>
-                    <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-[#7A969A] font-mono-tech">{turn.timestamp}</span>
+                    {turn.role === 'receptionist' && (
+                      <button
+                        onClick={() => speakText(turn.text)}
+                        className="text-[#4A6B70] hover:text-[#0D3438] cursor-pointer"
+                        title="Replay spoken audio"
+                      >
+                        <Volume2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div
+                    className={`max-w-[90%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-2xs ${
+                      turn.role === 'caller'
+                        ? 'bg-[#0D3438] text-white rounded-br-xs'
+                        : 'bg-white text-[#0D2B2F] border border-[#D5E0DF] rounded-bl-xs'
+                    }`}
+                  >
+                    <p>{turn.text}</p>
+
+                    {turn.extractedKeys && turn.extractedKeys.length > 0 && (
+                      <div className="mt-2 pt-1.5 border-t border-white/15 flex flex-wrap gap-1">
+                        {turn.extractedKeys.map((k) => (
+                          <span
+                            key={k}
+                            className="text-[10px] font-mono-tech px-1.5 py-0.5 rounded bg-[#B08448]/30 text-[#F5E6D3]"
+                          >
+                            +{k}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {turn.askedFields && turn.askedFields.length > 0 && (
+                      <div className="mt-2 pt-1.5 border-t border-[#E6EEEE] flex flex-wrap items-center gap-1">
+                        <span className="text-[10px] font-mono-tech text-[#5A7A7E]">askedFields:</span>
+                        {turn.askedFields.map((f) => (
+                          <span
+                            key={f}
+                            className="text-[10px] font-mono-tech px-1.5 py-0.5 rounded bg-[#EAF0EF] text-[#0D3438]"
+                          >
+                            {f}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <div ref={transcriptEndRef} />
+            </div>
+
+            {/* Spoken / Text Utterance Input Bar */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!inputText.trim()) return;
+                handleCallerInput(inputText, false);
+                setInputText('');
+              }}
+              className="p-3 bg-white border-t border-[#D5E0DF] flex items-center gap-2"
+            >
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder="Speak into mic or type what the caller says (e.g. 'We need 40 MT HDPE PE100 pipe grade to Mombasa')..."
+                className="flex-1 text-sm px-3.5 py-2 rounded-xl border border-[#C6D6D5] bg-[#F6F9F8] focus:outline-none focus:border-[#0D3438]"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-[#0D3438] hover:bg-[#164A50] text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" />
+                Send
+              </button>
+            </form>
+          </div>
+        </section>
+
+        {/* RIGHT COLUMN (7 COLS): LIVE CRM, SIMULATED MEETING & KNOWLEDGE BASE */}
+        <section className="lg:col-span-7 flex flex-col gap-4">
+          {/* Navigation Tabs */}
+          <div className="bg-white rounded-xl p-1.5 border border-[#D5E0DF] flex flex-wrap gap-1.5 shadow-2xs">
+            <button
+              onClick={() => setActiveRightTab('crm')}
+              className={`flex-1 min-w-[180px] py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer ${
+                activeRightTab === 'crm'
+                  ? 'bg-[#0D3438] text-white shadow-xs'
+                  : 'text-[#3B5E63] hover:bg-[#EAF0EF]'
+              }`}
+            >
+              <FileText className="w-4 h-4 text-[#B08448]" />
+              Live Buyer Qualification & Lead Summary ({readiness.score}%)
+            </button>
+
+            <button
+              onClick={() => setActiveRightTab('claims')}
+              className={`flex-1 min-w-[160px] py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer ${
+                activeRightTab === 'claims'
+                  ? 'bg-[#0D3438] text-white shadow-xs'
+                  : 'text-[#3B5E63] hover:bg-[#EAF0EF]'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4 text-[#B08448]" />
+              Source Grounding & Guardrails ({groundedClaims.length})
+            </button>
+
+            <button
+              onClick={() => setActiveRightTab('kb')}
+              className={`flex-1 min-w-[160px] py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer ${
+                activeRightTab === 'kb'
+                  ? 'bg-[#0D3438] text-white shadow-xs'
+                  : 'text-[#3B5E63] hover:bg-[#EAF0EF]'
+              }`}
+            >
+              <BookOpen className="w-4 h-4 text-[#B08448]" />
+              Aprirose Knowledge Base (38-Page Reference)
+            </button>
+          </div>
+
+          {/* TAB 1: LIVE BUYER QUALIFICATION & SIMULATED MEETING */}
+          {activeRightTab === 'crm' && (
+            <div className="space-y-4">
+              {/* Top Row: Sales Lead Summary Card (Page 38 Spec) + Simulated Meeting Card (Page 22 Spec) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Sales Team Lead Summary Card */}
+                <div className="bg-white rounded-2xl border border-[#D5E0DF] p-5 shadow-2xs flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 pb-3 border-b border-[#E6EEEE]">
+                      <div>
+                        <span className="text-[10px] font-mono-tech uppercase tracking-widest text-[#B08448] font-semibold">
+                          Page 21 & 38 Spec · Sales Handoff
+                        </span>
+                        <h3 className="text-base font-serif-editorial font-semibold text-[#0D3438]">
+                          Live Buyer Inquiry Summary
+                        </h3>
+                      </div>
+                      <button
+                        onClick={handleCopySummary}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#EAF0EF] hover:bg-[#D8E5E3] text-[#0D3438] text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+                      >
+                        {copiedSummary ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-700" />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            Copy Summary
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Commercial Readiness Progress */}
+                    <div className="my-3 bg-[#F4F8F7] rounded-xl p-3 border border-[#DCE7E6]">
+                      <div className="flex items-center justify-between text-xs mb-1.5">
+                        <span className="font-semibold text-[#0D3438]">
+                          Commercial Readiness Check
+                        </span>
+                        <span
+                          className={`font-mono-tech font-semibold px-2 py-0.5 rounded-full text-[11px] ${
+                            readiness.isReady
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {readiness.isReady ? 'Ready for Sales Review' : `${readiness.score}% Complete`}
+                        </span>
+                      </div>
+                      <div className="w-full h-2 bg-[#DCE7E6] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#0D3438] transition-all duration-300"
+                          style={{ width: `${readiness.score}%` }}
+                        />
+                      </div>
+                      {!readiness.isReady && (
+                        <p className="text-[11px] text-[#527378] mt-1.5">
+                          Missing context: {readiness.missingCore.join(' · ')}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Key Lead Summary Bullet List */}
+                    <ul className="space-y-2 text-xs mt-3">
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Company:</span>
+                        <span className="font-semibold text-[#0D2B2F]">{buyerFacts.company || '—'}</span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Country:</span>
+                        <span className="font-semibold text-[#0D2B2F]">{buyerFacts.companyCountry || '—'}</span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Buyer Type:</span>
+                        <span className="font-semibold text-[#0D2B2F]">{buyerFacts.buyerType || '—'}</span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Product & Application:</span>
+                        <span className="font-semibold text-[#0D2B2F]">
+                          {[buyerFacts.material, buyerFacts.application].filter(Boolean).join(' · ') || '—'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Grade / MFI / Producer:</span>
+                        <span className="font-semibold text-[#0D2B2F]">
+                          {[buyerFacts.requestedGrade, buyerFacts.mfi, buyerFacts.preferredProducer]
+                            .filter(Boolean)
+                            .join(' · ') || '—'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Order Quantity:</span>
+                        <span className="font-mono-tech font-semibold text-[#0D3438]">
+                          {buyerFacts.quantity || '—'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Monthly Volume (Independent):</span>
+                        <span className="font-mono-tech font-semibold text-[#0D2B2F]">
+                          {buyerFacts.monthlyVolume || '—'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Payment & Shipping Terms:</span>
+                        <span className="font-semibold text-[#0D2B2F]">
+                          {[buyerFacts.paymentTermsRequested, buyerFacts.shippingTermRequested]
+                            .filter(Boolean)
+                            .join(' / ') || '—'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Destination Port / Country:</span>
+                        <span className="font-semibold text-[#0D2B2F]">
+                          {[buyerFacts.dischargePort, buyerFacts.destinationCountry]
+                            .filter(Boolean)
+                            .join(', ') || '—'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Contact Name:</span>
+                        <span className="font-semibold text-[#0D2B2F]">{buyerFacts.contactName || '—'}</span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Email:</span>
+                        <span className="font-mono-tech text-[#0D2B2F]">{buyerFacts.email || '—'}</span>
+                      </li>
+                      <li className="flex justify-between py-1">
+                        <span className="text-[#527378] font-medium">WhatsApp / Phone:</span>
+                        <span className="font-mono-tech text-[#0D2B2F]">{buyerFacts.phone || '—'}</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Simulated Meeting Booking Card (Section 11 & 13 Spec) */}
+                <div className="bg-white rounded-2xl border border-[#D5E0DF] p-5 shadow-2xs flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 pb-3 border-b border-[#E6EEEE]">
+                      <div>
+                        <span className="text-[10px] font-mono-tech uppercase tracking-widest text-[#B08448] font-semibold">
+                          Section 11 Spec · Demo CRM Simulation
+                        </span>
+                        <h3 className="text-base font-serif-editorial font-semibold text-[#0D3438] flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-[#B08448]" />
+                          Simulated Meeting Status
+                        </h3>
+                      </div>
+
                       <span
-                        className={`px-2 py-0.5 rounded text-[11px] font-mono-tech font-medium border ${
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-mono-tech font-semibold ${
                           meetingState.status === 'demo_booked'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : meetingState.status === 'cancelled'
+                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
                             : meetingState.status === 'collecting'
-                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                            : 'bg-white text-slate-500 border-slate-200'
+                            ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                            : 'bg-slate-100 text-slate-600'
                         }`}
                       >
                         {meetingState.status === 'demo_booked'
-                          ? 'Demo Booked'
+                          ? 'DEMO BOOKED'
+                          : meetingState.status === 'cancelled'
+                          ? 'CANCELLED'
                           : meetingState.status === 'collecting'
-                          ? 'Collecting Slot'
-                          : 'Not Requested'}
+                          ? 'COLLECTING SLOT'
+                          : 'NO MEETING REQUESTED'}
                       </span>
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div className="p-2 rounded bg-white border border-slate-200">
-                      <div className="text-[10px] text-slate-400">Date</div>
-                      <div className="font-medium text-slate-900 mt-0.5 truncate">
-                        {meetingState.date || '—'}
+                    {/* Slot Details */}
+                    <div className="mt-3 bg-[#F4F8F7] rounded-xl p-3.5 border border-[#DCE7E6] space-y-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-[#527378]">Date:</span>
+                        <span className="font-semibold text-[#0D2B2F]">{meetingState.date || 'Not set'}</span>
                       </div>
-                    </div>
-                    <div className="p-2 rounded bg-white border border-slate-200">
-                      <div className="text-[10px] text-slate-400">Time</div>
-                      <div className="font-mono-tech font-medium text-slate-900 mt-0.5">
-                        {meetingState.clockTime
-                          ? `${meetingState.clockTime} ${meetingState.amPm || ''}`
-                          : '—'}
-                      </div>
-                    </div>
-                    <div className="p-2 rounded bg-white border border-slate-200">
-                      <div className="text-[10px] text-slate-400">Timezone</div>
-                      <div className="font-mono-tech font-medium text-blue-600 mt-0.5 truncate">
-                        {meetingState.timezone || '—'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {meetingState.validationNotes && meetingState.validationNotes.length > 0 && (
-                    <div className="p-2 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex items-center gap-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                      <span>{meetingState.validationNotes.join(' ')}</span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      onClick={() => openQuickBookModal()}
-                      className="flex-1 py-1.5 px-3 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium transition cursor-pointer"
-                    >
-                      {meetingState.status === 'demo_booked' ? 'Edit / Reschedule Slot' : 'Quick-Book Demo Slot'}
-                    </button>
-                    <button
-                      onClick={() => setActiveWorkspace('meetings')}
-                      className="flex-1 py-1.5 px-3 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer"
-                    >
-                      <span>Open Calendar Grid</span>
-                      <ArrowUpRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* WORKSPACE 2: CRM PIPELINE */}
-        {activeWorkspace === 'crm' && (
-          <div className="p-6 space-y-5 max-w-[1500px]">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {[
-                { label: 'Active Inquiries', value: crmLeads.length, sub: 'Synced to local CRM DB' },
-                { label: 'Polymer & Chemical Vol', value: '1,050 MT', sub: '+ 4 FCL container orders' },
-                {
-                  label: 'Meetings Scheduled',
-                  value: crmLeads.filter((l) => l.meeting.status === 'demo_booked').length,
-                  sub: 'Confirmed demo slots',
-                },
-                {
-                  label: 'Avg Qualification',
-                  value: `${Math.round(
-                    crmLeads.reduce((acc, l) => acc + l.readinessScore, 0) /
-                      Math.max(1, crmLeads.length)
-                  )}%`,
-                  sub: '25-field schema coverage',
-                },
-              ].map((stat) => (
-                <div key={stat.label} className="bg-white border border-slate-200 rounded-lg p-4">
-                  <div className="text-xs text-slate-500">{stat.label}</div>
-                  <div className="text-2xl font-bold font-mono-tech text-slate-900 mt-1">
-                    {stat.value}
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">{stat.sub}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="bg-white border border-slate-200 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2 flex-1">
-                <div className="relative min-w-[240px] flex-1 max-w-sm">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={crmSearch}
-                    onChange={(e) => setCrmSearch(e.target.value)}
-                    placeholder="Filter by company, material, or port..."
-                    className="w-full pl-8 pr-3 py-1.5 rounded-md border border-slate-200 text-xs focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-
-                <select
-                  value={crmOfficeFilter}
-                  onChange={(e) => setCrmOfficeFilter(e.target.value)}
-                  className="px-3 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700"
-                >
-                  <option value="ALL">All Desks (6 Offices)</option>
-                  <option value="London HQ">London HQ</option>
-                  <option value="Dubai Branch (DMCC)">Dubai Branch (DMCC)</option>
-                  <option value="Nairobi Regional Hub">Nairobi Regional Hub</option>
-                  <option value="Mumbai Desk">Mumbai Desk</option>
-                  <option value="Incheon Office">Incheon Office</option>
-                  <option value="Ha Noi Desk">Ha Noi Desk</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleExportCrmCsv}
-                  className="px-3 py-1.5 rounded-md bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5 text-blue-600" />
-                  Export CSV
-                </button>
-
-                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-md border border-slate-200">
-                  <button
-                    onClick={() => setCrmViewMode('table')}
-                    className={`px-3 py-1 rounded text-xs font-medium transition cursor-pointer ${
-                      crmViewMode === 'table'
-                        ? 'bg-white text-slate-900 shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Table View
-                  </button>
-                  <button
-                    onClick={() => setCrmViewMode('kanban')}
-                    className={`px-3 py-1 rounded text-xs font-medium transition cursor-pointer ${
-                      crmViewMode === 'kanban'
-                        ? 'bg-white text-slate-900 shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Board View
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {crmViewMode === 'table' ? (
-              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                        <th className="py-3 px-4">Reference</th>
-                        <th className="py-3 px-4">Organization</th>
-                        <th className="py-3 px-4">Material & Grade</th>
-                        <th className="py-3 px-4">Quantity</th>
-                        <th className="py-3 px-4">Port & Terms</th>
-                        <th className="py-3 px-4">Meeting Slot</th>
-                        <th className="py-3 px-4">Stage</th>
-                        <th className="py-3 px-4 text-right">Details</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {filteredLeads.map((lead) => (
-                        <tr
-                          key={lead.id}
-                          onClick={() => setSelectedLead(lead)}
-                          className="hover:bg-slate-50/80 cursor-pointer transition"
-                        >
-                          <td className="py-3 px-4 font-mono-tech font-medium text-blue-600">
-                            {lead.referenceCode}
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="font-semibold text-slate-900">
-                              {lead.facts.company || 'Inbound Caller'}
-                            </div>
-                            <div className="text-[11px] text-slate-500">
-                              {lead.facts.companyCountry} · {lead.facts.buyerType}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="font-medium text-slate-900">
-                              {lead.facts.material || '—'}
-                            </div>
-                            <div className="text-[11px] font-mono-tech text-slate-500">
-                              {[lead.facts.mfi, lead.facts.preferredProducer]
-                                .filter(Boolean)
-                                .join(' · ')}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 font-mono-tech">
-                            <div className="font-semibold text-slate-900">
-                              {lead.facts.quantity || '—'}
-                            </div>
-                            <div className="text-[11px] text-slate-500">
-                              {lead.facts.monthlyVolume || ''}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="font-medium text-slate-900">
-                              {lead.facts.dischargePort || '—'}
-                            </div>
-                            <div className="text-[11px] font-mono-tech text-slate-500">
-                              {[lead.facts.shippingTermRequested, lead.facts.paymentTermsRequested]
-                                .filter(Boolean)
-                                .join(' · ')}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            {lead.meeting.status === 'demo_booked' ? (
-                              <div>
-                                <span className="inline-block px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-medium">
-                                  Demo Booked
-                                </span>
-                                <div className="text-[11px] font-mono-tech text-slate-600 mt-0.5">
-                                  {lead.meeting.date?.split(',')[0]} {lead.meeting.clockTime}{' '}
-                                  {lead.meeting.amPm}
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span
-                              className={`inline-block px-2 py-0.5 rounded text-[11px] font-medium border ${stageBadgeColor(
-                                lead.stage
-                              )}`}
-                            >
-                              {lead.stage}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <span className="text-blue-600 font-medium hover:underline">
-                              Inspect
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
-                {CRM_STAGES.map((stage) => {
-                  const stageLeads = filteredLeads.filter((l) => l.stage === stage);
-                  return (
-                    <div
-                      key={stage}
-                      className="bg-slate-100/80 rounded-lg p-3 border border-slate-200 flex flex-col min-h-[440px]"
-                    >
-                      <div className="flex items-center justify-between px-1 pb-2.5 mb-2 border-b border-slate-200">
-                        <span className="text-xs font-semibold text-slate-700">{stage}</span>
-                        <span className="px-1.5 py-0.5 rounded bg-white text-slate-600 font-mono-tech text-[11px] border border-slate-200">
-                          {stageLeads.length}
+                      <div className="flex justify-between">
+                        <span className="text-[#527378]">Clock Time & AM/PM:</span>
+                        <span className="font-mono-tech font-semibold text-[#0D2B2F]">
+                          {meetingState.clockTime
+                            ? `${meetingState.clockTime} (${meetingState.amPm || 'ambiguous'})`
+                            : 'Not set'}
                         </span>
                       </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#527378]">Joining Timezone (IANA):</span>
+                        <span className="font-mono-tech font-semibold text-[#0D3438]">
+                          {meetingState.timezone || 'Not set'}
+                        </span>
+                      </div>
+                      {meetingState.locationLabel && (
+                        <div className="flex justify-between">
+                          <span className="text-[#527378]">Mapped Location Alias:</span>
+                          <span className="font-medium text-[#0D2B2F]">{meetingState.locationLabel}</span>
+                        </div>
+                      )}
+                    </div>
 
-                      <div className="space-y-2.5 flex-1">
-                        {stageLeads.map((lead) => (
-                          <div
-                            key={lead.id}
-                            onClick={() => setSelectedLead(lead)}
-                            className="bg-white rounded-md p-3 border border-slate-200 hover:border-blue-400 transition cursor-pointer shadow-2xs"
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-[10px] font-mono-tech font-medium text-blue-600">
-                                {lead.referenceCode}
-                              </span>
-                              <span className="text-[10px] font-mono-tech text-slate-400">
-                                {lead.readinessScore}%
-                              </span>
-                            </div>
-
-                            <div className="font-semibold text-xs text-slate-900">
-                              {lead.facts.company || 'Inbound Caller'}
-                            </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">
-                              {lead.facts.material || 'Material pending'}
-                            </div>
-
-                            <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono-tech text-slate-600">
-                              <span>{lead.facts.quantity || 'TBD'}</span>
-                              <span>
-                                {lead.facts.dischargePort || lead.facts.companyCountry || ''}
-                              </span>
-                            </div>
+                    {/* Validation Warnings (e.g. IST ambiguity or missing AM/PM) */}
+                    {meetingState.validationNotes && meetingState.validationNotes.length > 0 && (
+                      <div className="mt-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1">
+                        {meetingState.validationNotes.map((note, idx) => (
+                          <div key={idx} className="flex items-start gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                            <span>{note}</span>
                           </div>
                         ))}
                       </div>
+                    )}
+
+                    {/* Minimum Criteria Checklist for Demo Booking */}
+                    <div className="mt-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-[#4A6B70] mb-2">
+                        Mandatory Demo Booking Gate (All 4 Required):
+                      </p>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2
+                            className={`w-4 h-4 ${
+                              buyerFacts.contactName && buyerFacts.company
+                                ? 'text-emerald-600'
+                                : 'text-slate-300'
+                            }`}
+                          />
+                          <span>1. Customer Name & Company Name</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2
+                            className={`w-4 h-4 ${
+                              buyerFacts.email && buyerFacts.phone
+                                ? 'text-emerald-600'
+                                : 'text-slate-300'
+                            }`}
+                          />
+                          <span>2. Both Valid Email AND Phone/WhatsApp</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2
+                            className={`w-4 h-4 ${
+                              buyerFacts.material ? 'text-emerald-600' : 'text-slate-300'
+                            }`}
+                          />
+                          <span>3. Relevant Product / Material Requirement</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2
+                            className={`w-4 h-4 ${
+                              meetingState.date &&
+                              meetingState.clockTime &&
+                              meetingState.amPm !== 'ambiguous' &&
+                              meetingState.timezone &&
+                              !meetingState.timezone.includes('Ambiguous')
+                                ? 'text-emerald-600'
+                                : 'text-slate-300'
+                            }`}
+                          />
+                          <span>4. Unambiguous Date, Clock (AM/PM) & Joining Timezone</span>
+                        </div>
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* WORKSPACE 3: FULL INTERACTIVE VISUAL MEETINGS CALENDAR */}
-        {activeWorkspace === 'meetings' && (
-          <div className="p-6 max-w-[1500px] space-y-4">
-            {/* Calendar Toolbar */}
-            <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    Commercial Sales Calendar — November 2026
-                  </h3>
-                  <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono-tech text-[11px] font-medium">
-                    {bookedMeetingsList.length} Active Slots
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Click any booked event to inspect or reschedule, or click any empty time slot to schedule a simulated meeting.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => openQuickBookModal()}
-                  className="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Book Simulated Meeting
-                </button>
-
-                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-md border border-slate-200">
-                  <button
-                    onClick={() => setCalendarViewMode('week')}
-                    className={`px-3 py-1 rounded text-xs font-medium transition cursor-pointer ${
-                      calendarViewMode === 'week'
-                        ? 'bg-white text-slate-900 shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Week Grid
-                  </button>
-                  <button
-                    onClick={() => setCalendarViewMode('agenda')}
-                    className={`px-3 py-1 rounded text-xs font-medium transition cursor-pointer ${
-                      calendarViewMode === 'agenda'
-                        ? 'bg-white text-slate-900 shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Agenda List
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {calendarViewMode === 'week' ? (
-              /* INTERACTIVE 5-DAY WEEKLY TIME GRID */
-              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-                {/* Day Column Headers */}
-                <div className="grid grid-cols-6 border-b border-slate-200 bg-slate-50">
-                  <div className="p-3 border-r border-slate-200 text-[11px] font-mono-tech uppercase text-slate-400 flex items-center">
-                    Time Slot
                   </div>
-                  {CALENDAR_WEEK_DAYS.map((day) => {
-                    const dayCount = bookedMeetingsList.filter(
-                      (l) => resolveDayKey(l.meeting.date) === day.key
-                    ).length;
+
+                  <div className="mt-4 pt-3 border-t border-[#E6EEEE] text-[11px] text-[#527378] leading-relaxed">
+                    <strong>Safeguard:</strong> Simulated bookings are clearly labelled as a demo in the CRM. The assistant never claims a real calendar invite, live availability check, or staff alert was sent.
+                  </div>
+                </div>
+              </div>
+
+              {/* Complete 25-Field Customer Fact Inventory */}
+              <div className="bg-white rounded-2xl border border-[#D5E0DF] p-5 shadow-2xs">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <span className="text-[10px] font-mono-tech uppercase tracking-widest text-[#B08448] font-semibold">
+                      Section 10 · Complete Customer-Fact Field Inventory (25 Fields)
+                    </span>
+                    <h3 className="text-sm font-serif-editorial font-semibold text-[#0D3438]">
+                      Extracted Schema & Verbatim Caller Evidence
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
+                  {(
+                    [
+                      ['company', 'Company Name'],
+                      ['companyCountry', 'Company Country'],
+                      ['buyerType', 'Buyer Business Type'],
+                      ['contactName', 'Contact Name'],
+                      ['email', 'Email'],
+                      ['phone', 'Phone / WhatsApp'],
+                      ['material', 'Product / Material'],
+                      ['application', 'Application'],
+                      ['requestedGrade', 'Requested Grade'],
+                      ['mfi', 'MFI'],
+                      ['technicalSpecification', 'Technical Spec'],
+                      ['quantity', 'Order Quantity'],
+                      ['monthlyVolume', 'Monthly Volume'],
+                      ['dischargePort', 'Discharge Port'],
+                      ['destinationCountry', 'Destination Country'],
+                      ['destinationCity', 'Destination City'],
+                      ['shippingTermRequested', 'Shipping Term (Incoterm)'],
+                      ['paymentTermsRequested', 'Payment Terms'],
+                      ['shipmentTiming', 'Shipment Timing'],
+                      ['preferredProducer', 'Preferred Producer'],
+                      ['preferredOrigin', 'Preferred Origin'],
+                      ['preferredContactMethod', 'Preferred Contact Method'],
+                      ['technicalDocumentRequested', 'Technical Doc Requested'],
+                      ['specialRequirements', 'Special Requirements'],
+                      ['equivalentGradeAcceptable', 'Equivalent Acceptable'],
+                    ] as [keyof BuyerFacts, string][]
+                  ).map(([key, label]) => {
+                    const val = buyerFacts[key];
+                    const ev = factEvidence[key];
                     return (
                       <div
-                        key={day.key}
-                        className="p-3 border-r last:border-r-0 border-slate-200 flex items-center justify-between"
+                        key={key}
+                        className={`p-2.5 rounded-xl border transition ${
+                          val
+                            ? 'bg-[#F2F8F7] border-[#9BC2BE]'
+                            : 'bg-[#FAFBFB] border-[#E5ECEB] opacity-75'
+                        }`}
                       >
-                        <div>
-                          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                            {day.shortDay}
-                          </div>
-                          <div className="text-sm font-bold text-slate-900 font-mono-tech">
-                            {day.dayNum} {day.month}
-                          </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-medium text-[#4A6B70]">{label}</span>
+                          <span className="text-[10px] font-mono-tech text-[#7A969A]">{key}</span>
                         </div>
-                        {dayCount > 0 && (
-                          <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-mono-tech text-[10px] font-semibold border border-blue-200">
-                            {dayCount} {dayCount === 1 ? 'call' : 'calls'}
-                          </span>
+                        <div className="font-semibold text-[#0D2B2F] mt-1 truncate">
+                          {val || <span className="text-[#9AB0B3] font-normal">Not supplied</span>}
+                        </div>
+                        {ev && (
+                          <div className="text-[10px] text-[#527378] mt-1 truncate italic">
+                            Evidence: "{ev}"
+                          </div>
                         )}
                       </div>
                     );
                   })}
                 </div>
+              </div>
+            </div>
+          )}
 
-                {/* Hour Rows */}
-                <div className="divide-y divide-slate-200">
-                  {CALENDAR_HOURS.map((slot) => (
-                    <div key={slot.hour24} className="grid grid-cols-6 min-h-[82px]">
-                      {/* Time Label Column */}
-                      <div className="p-2.5 border-r border-slate-200 bg-slate-50/40 text-[11px] font-mono-tech text-slate-400">
-                        {slot.label}
-                      </div>
+          {/* TAB 2: SOURCE GROUNDING & SAFEGUARDS */}
+          {activeRightTab === 'claims' && (
+            <div className="bg-white rounded-2xl border border-[#D5E0DF] p-5 shadow-2xs space-y-4">
+              <div className="border-b border-[#E6EEEE] pb-3">
+                <span className="text-[10px] font-mono-tech uppercase tracking-widest text-[#B08448] font-semibold">
+                  Section 01 & 13 · Factual Grounding Contract
+                </span>
+                <h3 className="text-base font-serif-editorial font-semibold text-[#0D3438]">
+                  Active Source-Conflict & Boundary Guardrails
+                </h3>
+                <p className="text-xs text-[#527378] mt-0.5">
+                  Every affirmative company statement is grounded in the supplied snapshot (Revision 1529929) with explicit date and provenance qualifications.
+                </p>
+              </div>
 
-                      {/* 5 Day Cells */}
-                      {CALENDAR_WEEK_DAYS.map((day) => {
-                        const cellMeetings = bookedMeetingsList.filter(
-                          (l) =>
-                            resolveDayKey(l.meeting.date) === day.key &&
-                            resolveHour24(l.meeting.clockTime, l.meeting.amPm) === slot.hour24
-                        );
+              {/* Core Distinctions Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200">
+                  <div className="font-semibold text-amber-950 flex items-center gap-1.5 mb-1">
+                    <AlertTriangle className="w-4 h-4 text-amber-600" />
+                    2025 Financial Conflict (Unresolved)
+                  </div>
+                  <p className="text-amber-900 leading-relaxed">
+                    Prior owner-confirmed 2025 consolidated group turnover is <strong>US$62M</strong> vs latest public website 2025 revenue of <strong>US$63M</strong>. The receptionist never picks one as settled and states that entity/reporting basis requires team confirmation.
+                  </p>
+                </div>
 
-                        return (
-                          <div
-                            key={day.key}
-                            onClick={() => {
-                              if (cellMeetings.length === 0) {
-                                openQuickBookModal(day.key, slot.defaultClock, slot.amPm);
-                              }
-                            }}
-                            className={`p-1.5 border-r last:border-r-0 border-slate-200 transition relative group ${
-                              cellMeetings.length === 0
-                                ? 'hover:bg-blue-50/30 cursor-pointer'
-                                : 'bg-white'
-                            }`}
-                          >
-                            {cellMeetings.length === 0 && (
-                              <div className="opacity-0 group-hover:opacity-100 transition text-[10px] text-blue-600 font-medium flex items-center gap-1 p-1">
-                                <Plus className="w-3 h-3" />
-                                <span>Book {slot.defaultClock}</span>
-                              </div>
-                            )}
+                <div className="p-3.5 rounded-xl bg-[#F4F8F7] border border-[#CFE0DF]">
+                  <div className="font-semibold text-[#0D3438] flex items-center gap-1.5 mb-1">
+                    <Clock className="w-4 h-4 text-[#B08448]" />
+                    Undated Profile Snapshot vs 2022 Dated Scale
+                  </div>
+                  <p className="text-[#35565B] leading-relaxed">
+                    <strong>2022 Dated:</strong> 70,000 MTS polymer volume & US$79M turnover. <br />
+                    <strong>Undated Profile Snapshot:</strong> 80,000 MT polymer, 25,000 MT chemical, 50 employees, 50+ countries, US$100M turnover (never presented as current verified capacity).
+                  </p>
+                </div>
 
-                            <div className="space-y-1.5">
-                              {cellMeetings.map((lead) => (
-                                <div
-                                  key={lead.id}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedMeetingLead(lead);
-                                  }}
-                                  className={`p-2 rounded border text-left transition cursor-pointer shadow-2xs ${
-                                    lead.isLiveSession
-                                      ? 'bg-blue-600 text-white border-blue-700'
-                                      : 'bg-blue-50/90 hover:bg-blue-100/80 text-slate-900 border-blue-200'
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span
-                                      className={`font-mono-tech text-[10px] font-semibold ${
-                                        lead.isLiveSession ? 'text-blue-100' : 'text-blue-700'
-                                      }`}
-                                    >
-                                      {lead.meeting.clockTime} {lead.meeting.amPm}
-                                    </span>
-                                    <span
-                                      className={`font-mono-tech text-[9px] px-1 py-0.2 rounded ${
-                                        lead.isLiveSession
-                                          ? 'bg-white/20 text-white font-semibold'
-                                          : 'bg-white text-slate-600 border border-blue-200'
-                                      }`}
-                                    >
-                                      {lead.isLiveSession ? 'LIVE DEMO' : lead.referenceCode}
-                                    </span>
-                                  </div>
+                <div className="p-3.5 rounded-xl bg-[#F4F8F7] border border-[#CFE0DF]">
+                  <div className="font-semibold text-[#0D3438] flex items-center gap-1.5 mb-1">
+                    <Package className="w-4 h-4 text-[#B08448]" />
+                    Polymer vs Polyurethane Classification
+                  </div>
+                  <p className="text-[#35565B] leading-relaxed">
+                    <strong>PVC</strong> is a thermoplastic vinyl polymer and <strong>PET</strong> is a thermoplastic polyester — <em>neither is a polyurethane</em>. Polyurethanes focus exclusively on <strong>TDI</strong> and <strong>Polyol</strong>.
+                  </p>
+                </div>
 
-                                  <div className="font-semibold text-xs truncate mt-0.5">
-                                    {lead.facts.company || 'Caller Inquiry'}
-                                  </div>
-
-                                  <div
-                                    className={`text-[10px] truncate ${
-                                      lead.isLiveSession ? 'text-blue-100' : 'text-slate-600'
-                                    }`}
-                                  >
-                                    {lead.facts.material || 'Material Inquiry'}
-                                  </div>
-
-                                  <div
-                                    className={`text-[10px] font-mono-tech mt-1 flex items-center justify-between ${
-                                      lead.isLiveSession ? 'text-blue-200' : 'text-slate-500'
-                                    }`}
-                                  >
-                                    <span>{lead.meeting.timezone}</span>
-                                    <span>{lead.assignedOffice.split(' ')[0]}</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
+                <div className="p-3.5 rounded-xl bg-[#F4F8F7] border border-[#CFE0DF]">
+                  <div className="font-semibold text-[#0D3438] flex items-center gap-1.5 mb-1">
+                    <Globe2 className="w-4 h-4 text-[#B08448]" />
+                    Warehouses vs Representatives & No Fax
+                  </div>
+                  <p className="text-[#35565B] leading-relaxed">
+                    Profile lists an associate company/warehouse in <strong>Kenya</strong> and a warehouse partnership in <strong>Djibouti</strong>. France, Portugal, and Vietnam are representatives, not verified warehouses. <strong>Fax is no longer used.</strong>
+                  </p>
                 </div>
               </div>
-            ) : (
-              /* AGENDA LIST VIEW */
-              <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-200">
-                {bookedMeetingsList.map((lead) => (
-                  <div
-                    key={lead.id}
-                    onClick={() => setSelectedMeetingLead(lead)}
-                    className="p-4 hover:bg-slate-50 transition cursor-pointer flex flex-wrap items-center justify-between gap-4 text-xs"
-                  >
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono-tech font-medium text-blue-600">
-                          {lead.referenceCode}
-                        </span>
-                        <span className="font-semibold text-slate-900">
-                          {lead.facts.company || 'Caller Inquiry'}
-                        </span>
-                        <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          {lead.meeting.status === 'demo_booked' ? 'Demo Booked' : 'Collecting Slot'}
-                        </span>
-                      </div>
-                      <div className="text-slate-500">
-                        Contact: {lead.facts.contactName} ({lead.facts.email} · {lead.facts.phone})
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-6 font-mono-tech">
-                      <div>
-                        <div className="text-[10px] text-slate-400 uppercase">Date & Time</div>
-                        <div className="font-medium text-slate-900">
-                          {lead.meeting.date} · {lead.meeting.clockTime} {lead.meeting.amPm}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-slate-400 uppercase">Timezone</div>
-                        <div className="font-medium text-blue-600">{lead.meeting.timezone}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-slate-400 uppercase">Assigned Desk</div>
-                        <div className="font-sans font-medium text-slate-700">
-                          {lead.assignedOffice}
-                        </div>
-                      </div>
-                    </div>
+              {/* Live Grounded Claims Log */}
+              <div className="pt-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#4A6B70] mb-2.5">
+                  Verified Business Claims Emitted in Current Session ({groundedClaims.length})
+                </h4>
+                {groundedClaims.length === 0 ? (
+                  <div className="p-6 text-center rounded-xl bg-[#F9FBFA] border border-[#E5ECEB] text-xs text-[#68878B]">
+                    Ask about Aprirose financials, offices, warehouses, polyurethanes, brands, or compliance policies to see live `businessClaims` with `sourceId` and verbatim `evidenceQuote`.
                   </div>
-                ))}
+                ) : (
+                  <div className="space-y-2.5">
+                    {groundedClaims.map((c) => (
+                      <div
+                        key={c.id}
+                        className="p-3.5 rounded-xl bg-[#F4F8F7] border border-[#C6D6D5] text-xs space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono-tech text-[11px] px-2 py-0.5 rounded bg-[#0D3438] text-white">
+                            sourceId: {c.sourceId}
+                          </span>
+                          <span className="text-[10px] font-mono-tech text-[#68878B]">{c.timestamp}</span>
+                        </div>
+                        <p className="font-semibold text-[#0D2B2F]">{c.claimText}</p>
+                        <p className="text-[11px] text-[#4A6B70] italic bg-white p-2 rounded-lg border border-[#E2ECEB]">
+                          Verbatim Evidence: "{c.evidenceQuote}"
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
 
-        {/* WORKSPACE 4: KNOWLEDGE BASE */}
-        {activeWorkspace === 'knowledge' && (
-          <div className="p-6 max-w-[1500px] space-y-4">
-            <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-4">
-              <div className="flex flex-wrap gap-1.5 pb-3 border-b border-slate-200">
+          {/* TAB 3: COMPLETE APRIROSE KNOWLEDGE BASE EXPLORER */}
+          {activeRightTab === 'kb' && (
+            <div className="bg-white rounded-2xl border border-[#D5E0DF] p-5 shadow-2xs space-y-4">
+              {/* Sub-navigation */}
+              <div className="flex flex-wrap gap-1.5 pb-3 border-b border-[#E6EEEE]">
                 {(
                   [
-                    ['guardrails', 'Source Guardrails'],
-                    ['products', 'Polymers & Chemicals'],
-                    ['mfi', 'MFI Grade Reference'],
-                    ['offices', 'Global Offices (6)'],
-                    ['history', 'Timeline & Evidence'],
-                    ['compliance', 'Compliance Policies (4)'],
+                    ['products', 'Products & Brands'],
+                    ['mfi', 'MFI & Grade Tables'],
+                    ['offices', '6 Offices & 25 Markets'],
+                    ['history', 'Timeline & Testimonials'],
+                    ['compliance', '4 Compliance Policies'],
                   ] as [typeof kbSubTab, string][]
                 ).map(([id, label]) => (
                   <button
                     key={id}
                     onClick={() => setKbSubTab(id)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                       kbSubTab === id
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        ? 'bg-[#B08448] text-white'
+                        : 'bg-[#F2F6F5] text-[#35565B] hover:bg-[#E3ECEB]'
                     }`}
                   >
                     {label}
@@ -2146,673 +1296,248 @@ export default function App() {
                 ))}
               </div>
 
-              {kbSubTab === 'guardrails' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                  <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
-                    <div className="font-semibold text-slate-900 mb-1">
-                      2025 Financial Figures (Unresolved Conflict)
-                    </div>
-                    <p className="text-slate-600 leading-relaxed">
-                      Earlier owner-confirmed 2025 consolidated group turnover is{' '}
-                      <strong>US$62M</strong> vs latest public website 2025 revenue of{' '}
-                      <strong>US$63M</strong>. Neither is presented as settled; entity/reporting
-                      basis requires commercial confirmation.
-                    </p>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
-                    <div className="font-semibold text-slate-900 mb-1">
-                      Dated 2022 Scale vs. Undated Profile Snapshot
-                    </div>
-                    <p className="text-slate-600 leading-relaxed">
-                      <strong>2022 Dated:</strong> 70,000 MTS polymer volume & US$79M turnover.{' '}
-                      <br />
-                      <strong>Undated Profile Snapshot:</strong> 80,000 MT polymer, 25,000 MT
-                      chemical, 50 employees, 50+ countries, US$100M turnover.
-                    </p>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
-                    <div className="font-semibold text-slate-900 mb-1">
-                      Polymer vs. Polyurethane Classification
-                    </div>
-                    <p className="text-slate-600 leading-relaxed">
-                      <strong>PVC</strong> is a thermoplastic vinyl polymer and{' '}
-                      <strong>PET</strong> is a thermoplastic polyester — neither is a
-                      polyurethane. Polyurethanes focus exclusively on <strong>TDI</strong> and{' '}
-                      <strong>Polyol</strong>.
-                    </p>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
-                    <div className="font-semibold text-slate-900 mb-1">
-                      Warehouses vs. Representatives & No-Fax Rule
-                    </div>
-                    <p className="text-slate-600 leading-relaxed">
-                      Profile lists an associate company/warehouse in <strong>Kenya</strong> and a
-                      warehouse partnership in <strong>Djibouti</strong>. France, Portugal, and
-                      Vietnam are representatives. <strong>Fax is no longer used.</strong>
-                    </p>
-                  </div>
-                </div>
-              )}
-
+              {/* Sub-tab: Products & Brands */}
               {kbSubTab === 'products' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                  {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.polymers.map((poly) => (
-                    <div
-                      key={poly.group}
-                      className="p-4 rounded-lg bg-slate-50 border border-slate-200"
-                    >
-                      <h4 className="font-semibold text-slate-900">{poly.group}</h4>
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {poly.subtypes.map((s) => (
-                          <span
-                            key={s}
-                            className="px-2 py-0.5 rounded bg-white border border-slate-200 font-mono-tech text-[11px] text-slate-700"
-                          >
-                            {s}
-                          </span>
-                        ))}
+                <div className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.polymers.map((poly) => (
+                      <div key={poly.group} className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF]">
+                        <h4 className="font-serif-editorial font-semibold text-sm text-[#0D3438]">
+                          {poly.group}
+                        </h4>
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {poly.subtypes.map((s) => (
+                            <span
+                              key={s}
+                              className="px-2 py-0.5 rounded bg-white border border-[#C6D6D5] font-mono-tech text-[11px]"
+                            >
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-[#4A6B70]">
+                          <strong>Applications:</strong> {poly.applications.join(', ')}
+                        </p>
+                        <p className="mt-1 text-[11px] font-mono-tech text-[#0D3438]">
+                          {poly.publicRangeSummary}
+                        </p>
                       </div>
-                      <p className="mt-2 text-slate-600">
-                        <strong>Applications:</strong> {poly.applications.join(', ')}
-                      </p>
-                      <p className="mt-1 text-[11px] font-mono-tech text-blue-600">
-                        {poly.publicRangeSummary}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {kbSubTab === 'mfi' && (
-                <div className="overflow-x-auto text-xs">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase">
-                        <th className="py-2.5 px-3">Family</th>
-                        <th className="py-2.5 px-3">Grade / Process</th>
-                        <th className="py-2.5 px-3">MFI / Reference</th>
-                        <th className="py-2.5 px-3">Applications</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {APRIROSE_KNOWLEDGE_BASE.historicalMfiGrades.map((g, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="py-2 px-3 font-mono-tech font-semibold text-slate-900">
-                            {g.family}
-                          </td>
-                          <td className="py-2 px-3 font-medium text-slate-800">{g.gradeType}</td>
-                          <td className="py-2 px-3 font-mono-tech text-blue-600">{g.mfiOrSpec}</td>
-                          <td className="py-2 px-3 text-slate-600">{g.applications}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {kbSubTab === 'offices' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                  {APRIROSE_KNOWLEDGE_BASE.offices.map((off) => (
-                    <div
-                      key={off.id}
-                      className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-1"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-slate-900">
-                          {off.city}, {off.country}
-                        </span>
-                        <span className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
-                          {off.role}
-                        </span>
-                      </div>
-                      <p className="text-slate-600">{off.address}</p>
-                      <div className="flex flex-wrap gap-4 pt-1 font-mono-tech text-[11px] text-slate-700">
-                        <span>{off.phone}</span>
-                        <span className="text-blue-600">{off.email}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {kbSubTab === 'history' && (
-                <div className="divide-y divide-slate-200 text-xs">
-                  {APRIROSE_KNOWLEDGE_BASE.companyOverview.historicalTimeline.map((item) => (
-                    <div key={item.year} className="py-2.5 flex items-start gap-4">
-                      <span className="font-mono-tech font-semibold text-blue-600 w-12 shrink-0">
-                        {item.year}
-                      </span>
-                      <span className="text-slate-700">{item.event}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {kbSubTab === 'compliance' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                  {APRIROSE_KNOWLEDGE_BASE.compliancePolicies.map((pol) => (
-                    <div
-                      key={pol.id}
-                      className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5"
-                    >
-                      <h4 className="font-semibold text-slate-900">{pol.title}</h4>
-                      <div className="font-mono-tech text-[11px] text-blue-600">
-                        {pol.coverageOrDate}
-                      </div>
-                      <p className="text-slate-700">{pol.summary}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* CALENDAR MEETING DETAIL & RESCHEDULE MODAL */}
-      {selectedMeetingLead && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-lg w-full p-5 border border-slate-200 shadow-xl space-y-4">
-            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-medium">
-                    Simulated Demo Booking
-                  </span>
-                  <span className="font-mono-tech text-xs text-blue-600 font-semibold">
-                    {selectedMeetingLead.referenceCode}
-                  </span>
-                </div>
-                <h3 className="text-base font-bold text-slate-900 mt-1">
-                  {selectedMeetingLead.facts.company || 'Commercial Demo Meeting'}
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedMeetingLead(null)}
-                className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200 text-xs">
-              <div>
-                <div className="text-[10px] uppercase text-slate-400 font-semibold">Date</div>
-                <div className="font-semibold text-slate-900 mt-0.5">
-                  {selectedMeetingLead.meeting.date}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] uppercase text-slate-400 font-semibold">
-                  Time & Timezone
-                </div>
-                <div className="font-mono-tech font-semibold text-blue-600 mt-0.5">
-                  {selectedMeetingLead.meeting.clockTime} {selectedMeetingLead.meeting.amPm} (
-                  {selectedMeetingLead.meeting.timezone})
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] uppercase text-slate-400 font-semibold">
-                  Attendee & Contact
-                </div>
-                <div className="font-medium text-slate-900 mt-0.5">
-                  {selectedMeetingLead.facts.contactName || '—'}
-                </div>
-                <div className="font-mono-tech text-[11px] text-slate-500">
-                  {selectedMeetingLead.facts.email} · {selectedMeetingLead.facts.phone}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] uppercase text-slate-400 font-semibold">
-                  Assigned Aprirose Desk
-                </div>
-                <div className="font-medium text-slate-900 mt-0.5">
-                  {selectedMeetingLead.assignedOffice}
-                </div>
-                <div className="text-[11px] text-slate-500">
-                  {selectedMeetingLead.assignedOwner}
-                </div>
-              </div>
-            </div>
-
-            <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 text-xs">
-              <div className="px-3.5 py-2 flex justify-between">
-                <span className="text-slate-500">Product Requirement</span>
-                <span className="font-medium text-slate-900">
-                  {selectedMeetingLead.facts.material || '—'}
-                </span>
-              </div>
-              <div className="px-3.5 py-2 flex justify-between">
-                <span className="text-slate-500">Order Quantity / Monthly Vol</span>
-                <span className="font-mono-tech font-medium text-slate-900">
-                  {[selectedMeetingLead.facts.quantity, selectedMeetingLead.facts.monthlyVolume]
-                    .filter(Boolean)
-                    .join(' / ') || '—'}
-                </span>
-              </div>
-              <div className="px-3.5 py-2 flex justify-between">
-                <span className="text-slate-500">Discharge Port & Terms</span>
-                <span className="font-medium text-slate-900">
-                  {[
-                    selectedMeetingLead.facts.dischargePort,
-                    selectedMeetingLead.facts.shippingTermRequested,
-                    selectedMeetingLead.facts.paymentTermsRequested,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ') || '—'}
-                </span>
-              </div>
-            </div>
-
-            {/* Inline Quick Reschedule Bar */}
-            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2 text-xs">
-              <div className="font-semibold text-slate-700 text-[11px] uppercase tracking-wider">
-                Reschedule Meeting Slot
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <select
-                  value={resolveDayKey(selectedMeetingLead.meeting.date)}
-                  onChange={(e) =>
-                    handleRescheduleLeadSlot(
-                      selectedMeetingLead.id,
-                      e.target.value,
-                      selectedMeetingLead.meeting.clockTime || '10:30',
-                      (selectedMeetingLead.meeting.amPm as 'AM' | 'PM') || 'AM',
-                      selectedMeetingLead.meeting.timezone || 'Asia/Kolkata'
-                    )
-                  }
-                  className="px-2 py-1.5 rounded border border-slate-200 bg-white text-xs"
-                >
-                  {CALENDAR_WEEK_DAYS.map((d) => (
-                    <option key={d.key} value={d.key}>
-                      {d.shortDay}, {d.dayNum} {d.month}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={`${selectedMeetingLead.meeting.clockTime || '10:30'}|${
-                    selectedMeetingLead.meeting.amPm || 'AM'
-                  }`}
-                  onChange={(e) => {
-                    const [clk, ap] = e.target.value.split('|');
-                    handleRescheduleLeadSlot(
-                      selectedMeetingLead.id,
-                      resolveDayKey(selectedMeetingLead.meeting.date),
-                      clk,
-                      (ap as 'AM' | 'PM') || 'AM',
-                      selectedMeetingLead.meeting.timezone || 'Asia/Kolkata'
-                    );
-                  }}
-                  className="px-2 py-1.5 rounded border border-slate-200 bg-white font-mono-tech text-xs"
-                >
-                  {CALENDAR_HOURS.map((h) => (
-                    <option key={h.hour24} value={`${h.defaultClock}|${h.amPm}`}>
-                      {h.defaultClock} {h.amPm}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={selectedMeetingLead.meeting.timezone || 'Asia/Kolkata'}
-                  onChange={(e) =>
-                    handleRescheduleLeadSlot(
-                      selectedMeetingLead.id,
-                      resolveDayKey(selectedMeetingLead.meeting.date),
-                      selectedMeetingLead.meeting.clockTime || '10:30',
-                      (selectedMeetingLead.meeting.amPm as 'AM' | 'PM') || 'AM',
-                      e.target.value
-                    )
-                  }
-                  className="px-2 py-1.5 rounded border border-slate-200 bg-white font-mono-tech text-xs"
-                >
-                  <option value="Asia/Kolkata">Asia/Kolkata</option>
-                  <option value="Africa/Nairobi">Africa/Nairobi</option>
-                  <option value="Asia/Dubai">Asia/Dubai</option>
-                  <option value="Europe/London">Europe/London</option>
-                  <option value="Asia/Singapore">Asia/Singapore</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
-              <button
-                onClick={() => handleCancelLeadMeeting(selectedMeetingLead.id)}
-                className="px-3 py-1.5 rounded-md bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-medium flex items-center gap-1.5 cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Cancel Booking
-              </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleDownloadIcs(selectedMeetingLead)}
-                  className="px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Export .ICS
-                </button>
-                <button
-                  onClick={() => {
-                    const leadToInspect = selectedMeetingLead;
-                    setSelectedMeetingLead(null);
-                    setSelectedLead(leadToInspect);
-                  }}
-                  className="px-3.5 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium cursor-pointer"
-                >
-                  Open Full 25-Field CRM Record
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* QUICK-BOOK / SCHEDULE DEMO MEETING MODAL */}
-      {showQuickBookModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
-          <form
-            onSubmit={handleConfirmQuickBook}
-            className="bg-white rounded-lg max-w-md w-full p-5 border border-slate-200 shadow-xl space-y-4"
-          >
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900">
-                  Schedule Simulated Sales Meeting
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Validates the 4 mandatory demo criteria & plots onto the commercial calendar
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowQuickBookModal(false)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">Company Name *</label>
-                  <input
-                    required
-                    type="text"
-                    value={quickBookForm.company}
-                    onChange={(e) => setQuickBookForm({ ...quickBookForm, company: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded border border-slate-200 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">Customer Name *</label>
-                  <input
-                    required
-                    type="text"
-                    value={quickBookForm.contactName}
-                    onChange={(e) =>
-                      setQuickBookForm({ ...quickBookForm, contactName: e.target.value })
-                    }
-                    className="w-full px-2.5 py-1.5 rounded border border-slate-200 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">Email Address *</label>
-                  <input
-                    required
-                    type="email"
-                    value={quickBookForm.email}
-                    onChange={(e) => setQuickBookForm({ ...quickBookForm, email: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded border border-slate-200 font-mono-tech focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">
-                    Phone / WhatsApp *
-                  </label>
-                  <input
-                    required
-                    type="text"
-                    value={quickBookForm.phone}
-                    onChange={(e) => setQuickBookForm({ ...quickBookForm, phone: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded border border-slate-200 font-mono-tech focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">
-                  Product / Material Requirement *
-                </label>
-                <input
-                  required
-                  type="text"
-                  value={quickBookForm.material}
-                  onChange={(e) => setQuickBookForm({ ...quickBookForm, material: e.target.value })}
-                  className="w-full px-2.5 py-1.5 rounded border border-slate-200 focus:outline-none focus:border-blue-600"
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">Date *</label>
-                  <select
-                    value={quickBookForm.date}
-                    onChange={(e) => setQuickBookForm({ ...quickBookForm, date: e.target.value })}
-                    className="w-full px-2 py-1.5 rounded border border-slate-200 bg-white"
-                  >
-                    {CALENDAR_WEEK_DAYS.map((d) => (
-                      <option key={d.key} value={d.key}>
-                        {d.shortDay}, {d.dayNum} {d.month}
-                      </option>
                     ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">Clock Time *</label>
-                  <div className="flex gap-1">
-                    <input
-                      required
-                      type="text"
-                      value={quickBookForm.clockTime}
-                      onChange={(e) =>
-                        setQuickBookForm({ ...quickBookForm, clockTime: e.target.value })
-                      }
-                      className="w-full px-2 py-1.5 rounded border border-slate-200 font-mono-tech"
-                    />
-                    <select
-                      value={quickBookForm.amPm}
-                      onChange={(e) =>
-                        setQuickBookForm({
-                          ...quickBookForm,
-                          amPm: e.target.value as 'AM' | 'PM',
-                        })
-                      }
-                      className="px-1.5 py-1.5 rounded border border-slate-200 bg-white font-mono-tech"
-                    >
-                      <option value="AM">AM</option>
-                      <option value="PM">PM</option>
-                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF]">
+                      <h4 className="font-semibold text-[#0D3438] mb-1.5">Industrial Chemicals & PU</h4>
+                      <ul className="space-y-1 text-[#35565B]">
+                        {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.chemicals.map((c) => (
+                          <li key={c}>• {c}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF]">
+                      <h4 className="font-semibold text-[#0D3438] mb-1.5">Additives & Bulk Commodities</h4>
+                      <ul className="space-y-1 text-[#35565B]">
+                        {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.additivesAndMasterbatches.map((a) => (
+                          <li key={a}>• {a}</li>
+                        ))}
+                      </ul>
+                      <h5 className="font-semibold text-[#0D3438] mt-3 mb-1">Bulk Commodities</h5>
+                      <p className="text-[#35565B]">
+                        {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.bulkCommodities.join(' · ')}
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF]">
+                      <h4 className="font-semibold text-[#0D3438] mb-1.5">Published Brands (Reference)</h4>
+                      <p className="text-[#35565B] mb-2">
+                        <strong>Polymers:</strong>{' '}
+                        {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.publishedBrands.polymers.join(', ')}
+                      </p>
+                      <p className="text-[#35565B] mb-2">
+                        <strong>Chemicals:</strong>{' '}
+                        {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.publishedBrands.chemicals.join(', ')}
+                      </p>
+                      <p className="text-[11px] text-[#68878B] italic">
+                        {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.publishedBrands.boundaryNote}
+                      </p>
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">Timezone *</label>
-                  <select
-                    value={quickBookForm.timezone}
-                    onChange={(e) =>
-                      setQuickBookForm({ ...quickBookForm, timezone: e.target.value })
-                    }
-                    className="w-full px-2 py-1.5 rounded border border-slate-200 bg-white font-mono-tech"
-                  >
-                    <option value="Asia/Kolkata">Asia/Kolkata</option>
-                    <option value="Africa/Nairobi">Africa/Nairobi</option>
-                    <option value="Asia/Dubai">Asia/Dubai</option>
-                    <option value="Europe/London">Europe/London</option>
-                    <option value="Asia/Singapore">Asia/Singapore</option>
-                    <option value="Africa/Lagos">Africa/Lagos</option>
-                    <option value="America/New_York">America/New_York</option>
-                  </select>
-                </div>
-              </div>
-            </div>
+              )}
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setShowQuickBookModal(false)}
-                className="px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium cursor-pointer"
-              >
-                Confirm Simulated Booking
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* SLIDE-OVER CRM LEAD INSPECTOR */}
-      {selectedLead && (
-        <div className="fixed inset-0 z-40 bg-slate-900/30 flex justify-end">
-          <div className="bg-white w-full max-w-xl h-full shadow-xl border-l border-slate-200 flex flex-col justify-between overflow-y-auto">
-            <div className="p-6 space-y-5">
-              <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-200">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono-tech text-xs font-semibold text-blue-600">
-                      {selectedLead.referenceCode}
-                    </span>
-                    <span className="text-xs text-slate-400">·</span>
-                    <span className="text-xs text-slate-600">{selectedLead.assignedOffice}</span>
+              {/* Sub-tab: MFI & Grade Tables */}
+              {kbSubTab === 'mfi' && (
+                <div className="space-y-3 text-xs">
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+                    <strong>Technical Reference Boundary:</strong> MFI test temperature/load conditions are not specified in these reference lines. Exact grade selection, food-contact status, pressure suitability, and COA require manufacturer TDS and commercial review.
                   </div>
-                  <h2 className="text-base font-bold text-slate-900 mt-1">
-                    {selectedLead.facts.company || 'Inbound Caller'}
-                  </h2>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-[#0D3438] text-white text-[11px] uppercase tracking-wider">
+                          <th className="py-2.5 px-3 rounded-tl-lg">Family</th>
+                          <th className="py-2.5 px-3">Grade / Process</th>
+                          <th className="py-2.5 px-3">MFI / Reference Range</th>
+                          <th className="py-2.5 px-3 rounded-tr-lg">Typical Applications</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#E5ECEB]">
+                        {APRIROSE_KNOWLEDGE_BASE.historicalMfiGrades.map((g, i) => (
+                          <tr key={i} className="hover:bg-[#F4F8F7]">
+                            <td className="py-2 px-3 font-mono-tech font-semibold text-[#0D3438]">
+                              {g.family}
+                            </td>
+                            <td className="py-2 px-3 font-semibold">{g.gradeType}</td>
+                            <td className="py-2 px-3 font-mono-tech text-[#B08448] font-medium">
+                              {g.mfiOrSpec}
+                            </td>
+                            <td className="py-2 px-3 text-[#4A6B70]">{g.applications}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-                <button
-                  onClick={() => setSelectedLead(null)}
-                  className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+              )}
 
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                  Pipeline Stage
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {CRM_STAGES.map((st) => (
-                    <button
-                      key={st}
-                      onClick={() => handleUpdateLeadStage(selectedLead.id, st)}
-                      className={`px-2.5 py-1 rounded text-xs font-medium border transition cursor-pointer ${
-                        selectedLead.stage === st
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      {st}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {/* Sub-tab: Offices & Markets */}
+              {kbSubTab === 'offices' && (
+                <div className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {APRIROSE_KNOWLEDGE_BASE.offices.map((off) => (
+                      <div key={off.id} className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF] space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-serif-editorial font-semibold text-sm text-[#0D3438]">
+                            {off.city}, {off.country}
+                          </span>
+                          <span className="text-[10px] font-mono-tech px-2 py-0.5 rounded bg-[#0D3438] text-white">
+                            {off.role}
+                          </span>
+                        </div>
+                        <p className="text-[#35565B]">{off.address}</p>
+                        <div className="flex flex-wrap gap-3 pt-1 font-mono-tech text-[11px] text-[#0D3438]">
+                          <span>Tel: {off.phone}</span>
+                          <span>Email: {off.email}</span>
+                        </div>
+                        {off.notes && <p className="text-[11px] text-[#68878B] italic pt-0.5">{off.notes}</p>}
+                      </div>
+                    ))}
+                  </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    Qualification Schema (25 Fields)
-                  </span>
-                  <button
-                    onClick={() => handleCopySummary(selectedLead.facts, selectedLead.meeting)}
-                    className="text-xs font-medium text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    <Copy className="w-3 h-3" />
-                    Copy Summary
-                  </button>
-                </div>
-
-                <div className="border border-slate-200 rounded-lg divide-y divide-slate-200 text-xs">
-                  {(
-                    [
-                      ['company', 'Company Name'],
-                      ['companyCountry', 'Company Country'],
-                      ['buyerType', 'Buyer Type'],
-                      ['contactName', 'Contact Name'],
-                      ['email', 'Email'],
-                      ['phone', 'Phone / WhatsApp'],
-                      ['material', 'Material / Product'],
-                      ['application', 'Application'],
-                      ['requestedGrade', 'Requested Grade'],
-                      ['mfi', 'MFI / Spec'],
-                      ['quantity', 'Order Quantity'],
-                      ['monthlyVolume', 'Monthly Volume'],
-                      ['dischargePort', 'Discharge Port'],
-                      ['destinationCountry', 'Destination Country'],
-                      ['shippingTermRequested', 'Incoterm'],
-                      ['paymentTermsRequested', 'Payment Terms'],
-                      ['shipmentTiming', 'Shipment Timing'],
-                      ['preferredProducer', 'Preferred Producer'],
-                      ['technicalDocumentRequested', 'Technical Documents'],
-                      ['equivalentGradeAcceptable', 'Equivalent Acceptable'],
-                    ] as [keyof BuyerFacts, string][]
-                  ).map(([k, label]) => {
-                    const val = selectedLead.facts[k];
-                    return (
-                      <div key={k} className="px-3.5 py-2 flex items-center justify-between gap-4">
-                        <span className="text-slate-500">{label}</span>
+                  <div className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF]">
+                    <h4 className="font-semibold text-[#0D3438] mb-2">
+                      Selected Markets Retained in Knowledge Base (25 Countries)
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {APRIROSE_KNOWLEDGE_BASE.selectedMarkets.map((m) => (
                         <span
-                          className={`text-right ${
-                            val ? 'font-medium text-slate-900' : 'text-slate-300'
-                          }`}
+                          key={m}
+                          className="px-2.5 py-1 rounded-lg bg-white border border-[#C6D6D5] text-[#0D2B2F] font-medium"
                         >
-                          {val || '—'}
+                          {m}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-tab: Timeline & Customer Testimonials */}
+              {kbSubTab === 'history' && (
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <h4 className="font-serif-editorial font-semibold text-sm text-[#0D3438] mb-2">
+                      Published Timeline & Profile Milestones (1996 – 2023)
+                    </h4>
+                    <div className="space-y-2">
+                      {APRIROSE_KNOWLEDGE_BASE.companyOverview.historicalTimeline.map((item) => (
+                        <div
+                          key={item.year}
+                          className="flex items-start gap-3 p-2.5 rounded-xl bg-[#F6F9F8] border border-[#E2ECEB]"
+                        >
+                          <span className="font-mono-tech font-bold text-[#B08448] px-2 py-0.5 bg-white rounded border border-[#DEC9A8]">
+                            {item.year}
+                          </span>
+                          <span className="text-[#2D4D52]">{item.event}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="font-serif-editorial font-semibold text-sm text-[#0D3438] mb-2 flex items-center gap-1.5">
+                      <Award className="w-4 h-4 text-[#B08448]" />
+                      Published Customer Evidence (Historical Context)
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {APRIROSE_KNOWLEDGE_BASE.customerTestimonials.map((t) => (
+                        <div key={t.person} className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF]">
+                          <div className="font-semibold text-[#0D3438]">
+                            {t.person} — <span className="text-[#B08448]">{t.role}, {t.company}</span>
+                          </div>
+                          <p className="text-[#35565B] mt-1 leading-relaxed">{t.summary}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-tab: Compliance & Sustainability Policies */}
+              {kbSubTab === 'compliance' && (
+                <div className="space-y-3 text-xs">
+                  {APRIROSE_KNOWLEDGE_BASE.compliancePolicies.map((pol) => (
+                    <div key={pol.id} className="p-4 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF] space-y-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="font-serif-editorial font-semibold text-sm text-[#0D3438]">
+                          {pol.title}
+                        </h4>
+                        <span className="font-mono-tech text-[11px] px-2.5 py-0.5 rounded bg-white border border-[#C6D6D5] text-[#4A6B70]">
+                          {pol.coverageOrDate}
                         </span>
                       </div>
-                    );
-                  })}
+                      <p className="font-medium text-[#2D4D52]">{pol.summary}</p>
+                      <ul className="space-y-1 text-[#4A6B70] pt-1">
+                        {pol.highlights.map((h, i) => (
+                          <li key={i}>• {h}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
                 </div>
-              </div>
+              )}
             </div>
-          </div>
-        </div>
-      )}
+          )}
+        </section>
+      </main>
 
-      {/* GEMINI API KEY MODAL */}
+      {/* GEMINI LIVE API SETTINGS MODAL */}
       {showSettingsModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-5 border border-slate-200 shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-[#D5E0DF] shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E6EEEE] pb-3">
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">
-                  Gemini Live API Configuration
+                <h3 className="text-base font-serif-editorial font-semibold text-[#0D3438]">
+                  Gemini Multimodal Live API Configuration
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Connect via WebSockets (`@google/genai` `ai.live.connect`)
+                <p className="text-xs text-[#527378]">
+                  Connect directly via WebSockets (`@google/genai` `ai.live.connect`)
                 </p>
               </div>
               <button
                 onClick={() => setShowSettingsModal(false)}
-                className="text-xs text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="text-xs text-[#527378] hover:text-[#0D3438] cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                Close
               </button>
             </div>
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-medium text-slate-700 mb-1">Gemini API Key</label>
+                <label className="block font-semibold text-[#0D3438] mb-1">
+                  Google Gemini API Key
+                </label>
                 <input
                   type="password"
                   value={geminiApiKey}
@@ -2821,18 +1546,23 @@ export default function App() {
                     localStorage.setItem('aprirose_gemini_api_key', e.target.value);
                   }}
                   placeholder="AIzaSy..."
-                  className="w-full px-3 py-2 rounded-md border border-slate-200 font-mono-tech focus:outline-none focus:border-blue-600"
+                  className="w-full px-3 py-2 rounded-lg border border-[#C6D6D5] font-mono-tech focus:outline-none focus:border-[#0D3438]"
                 />
+                <p className="text-[11px] text-[#68878B] mt-1">
+                  Stored locally in your browser. If you don't have a key handy, use <strong>Instant Grounded Voice</strong> mode which works with zero configuration.
+                </p>
               </div>
 
               <div>
-                <label className="block font-medium text-slate-700 mb-1">Model</label>
+                <label className="block font-semibold text-[#0D3438] mb-1">
+                  Live API Model
+                </label>
                 <select
                   value={geminiModel}
                   onChange={(e) => setGeminiModel(e.target.value)}
-                  className="w-full px-3 py-2 rounded-md border border-slate-200 bg-white"
+                  className="w-full px-3 py-2 rounded-lg border border-[#C6D6D5] bg-white"
                 >
-                  <option value="gemini-3.8-live">gemini-3.8-live</option>
+                  <option value="gemini-3.8-live">gemini-3.8-live (Current Default Live Model)</option>
                   <option value="gemini-3.1-flash-live-preview">gemini-3.1-flash-live-preview</option>
                   <option value="gemini-2.5-flash-native-audio-preview-12-2025">
                     gemini-2.5-flash-native-audio-preview-12-2025
@@ -2841,16 +1571,19 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block font-medium text-slate-700 mb-1">Voice</label>
+                <label className="block font-semibold text-[#0D3438] mb-1">
+                  Receptionist Prebuilt Voice
+                </label>
                 <select
                   value={geminiVoice}
                   onChange={(e) => setGeminiVoice(e.target.value)}
-                  className="w-full px-3 py-2 rounded-md border border-slate-200 bg-white"
+                  className="w-full px-3 py-2 rounded-lg border border-[#C6D6D5] bg-white"
                 >
-                  <option value="Aoede">Aoede</option>
-                  <option value="Kore">Kore</option>
-                  <option value="Puck">Puck</option>
-                  <option value="Charon">Charon</option>
+                  <option value="Aoede">Aoede (Warm, Professional British/International)</option>
+                  <option value="Kore">Kore (Clear, Composed)</option>
+                  <option value="Puck">Puck (Energetic, Conversational)</option>
+                  <option value="Charon">Charon (Deep, Authoritative)</option>
+                  <option value="Fenrir">Fenrir (Direct, Crisp)</option>
                 </select>
               </div>
             </div>
@@ -2863,9 +1596,9 @@ export default function App() {
                   }
                   setShowSettingsModal(false);
                 }}
-                className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-[#0D3438] hover:bg-[#164A50] text-white text-xs font-semibold cursor-pointer"
               >
-                Save Configuration
+                Save & Activate Gemini Live Voice
               </button>
             </div>
           </div>

@@ -1,6 +1,29 @@
 {
-  "updatedAt": "2026-11-01T14:40:48.367Z",
+  "updatedAt": "2026-11-05T14:53:57.159Z",
   "leads": [
+    {
+      "id": "lead-live-session",
+      "referenceCode": "APR-2026-845",
+      "createdAt": "2026-11-05 14:49",
+      "updatedAt": "2026-11-05 14:53",
+      "stage": "New Voice Intake",
+      "assignedOffice": "London HQ",
+      "assignedOwner": "Parag (parag@aprirose.com)",
+      "readinessScore": 20,
+      "isLiveSession": true,
+      "callDurationSec": 6,
+      "facts": {
+        "quantity": "1000 MT",
+        "material": "PP Raffia"
+      },
+      "factEvidence": {},
+      "meeting": {
+        "status": "none",
+        "validationNotes": []
+      },
+      "claims": [],
+      "notes": "Captured via Aprirose Voice Receptionist."
+    },
     {
       "id": "lead-texplast-ke",
       "referenceCode": "APR-2026-841",
