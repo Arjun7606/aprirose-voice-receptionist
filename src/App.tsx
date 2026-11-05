@@ -1,590 +1,1313 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  ArrowUp,
-  Check,
-  CheckCheck,
-  ChevronDown,
-  Copy,
-  Headphones,
-  Mic,
-  MicOff,
   Phone,
   PhoneOff,
+  Mic,
+  MicOff,
+  CheckCircle2,
+  AlertTriangle,
+  Calendar,
+  Package,
+  Globe2,
+  ShieldCheck,
+  UserCheck,
+  Copy,
+  Check,
+  KeyRound,
+  Send,
   RotateCcw,
-  Volume2,
-  VolumeX,
-} from "lucide-react";
-import type {
+  BookOpen,
+  FileText,
+  Sparkles,
+  Award,
+  Building2,
+  ArrowUpRight,
+} from 'lucide-react';
+import {
+  APRIROSE_KNOWLEDGE_BASE,
   BuyerFacts,
   SimulatedMeetingState,
-} from "./data/apriroseKnowledge";
+} from './data/apriroseKnowledge';
 import {
   checkCommercialReadiness,
-  checkSimulatedMeetingReadiness,
   extractFactsAndProcessTurn,
-} from "./lib/apriroseGroundedEngine";
-import { GeminiLiveReceptionistClient } from "./lib/geminiLiveService";
+} from './lib/apriroseGroundedEngine';
+import { GeminiLiveReceptionistClient } from './lib/geminiLiveService';
 
-type Turn = {
+interface TranscriptTurn {
   id: string;
-  role: "caller" | "receptionist";
+  role: 'caller' | 'receptionist';
   text: string;
-  time: string;
-};
-const time = () =>
-  new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-const welcome = (): Turn => ({
-  id: crypto.randomUUID(),
-  role: "receptionist",
-  text: "Welcome to Aprirose. Start a call to tell us what you’re looking for, or type your enquiry below.",
-  time: time(),
-});
-const fields: [keyof BuyerFacts, string][] = [
-  ["company", "Company"],
-  ["companyCountry", "Company country"],
-  ["buyerType", "Business type"],
-  ["contactName", "Contact name"],
-  ["email", "Email"],
-  ["phone", "Phone / WhatsApp"],
-  ["material", "Product"],
-  ["application", "Application"],
-  ["requestedGrade", "Grade"],
-  ["mfi", "MFI / specification"],
-  ["quantity", "Order quantity"],
-  ["monthlyVolume", "Monthly requirement"],
-  ["dischargePort", "Discharge port"],
-  ["destinationCountry", "Destination country"],
-  ["shippingTermRequested", "Shipping terms"],
-  ["paymentTermsRequested", "Payment terms"],
-  ["shipmentTiming", "Shipment timing"],
-  ["preferredProducer", "Preferred producer"],
-  ["preferredOrigin", "Origin"],
-  ["technicalDocumentRequested", "Documents requested"],
-  ["preferredContactMethod", "Contact preference"],
-  ["equivalentGradeAcceptable", "Equivalent grades"],
-];
-const examples = [
+  timestamp: string;
+}
+
+const QUICK_TOPICS = [
   {
-    label: "Request a quotation",
-    text: "We need 100 MT of PP raffia for woven bags, delivered CIF to Mombasa, Kenya. Our company is East Africa Packaging, a manufacturer in Kenya.",
+    label: 'PP Raffia Quotation (100 MT)',
+    prompt:
+      'Hello, we are ABC Plastics Ltd based in Madagascar. We manufacture woven sacks and are looking for 100 MT of PP Raffia around MFI 3.5 shipped CIF to Tamatave on LC terms.',
   },
   {
-    label: "Explore products",
-    text: "Which polymers and industrial chemicals can Aprirose help us source?",
+    label: 'Provide Contact Details',
+    prompt:
+      'My name is John Smith. My email is john.smith@abcplastics.mg and my WhatsApp number is +261 34 12 345 67.',
   },
   {
-    label: "Arrange a meeting",
-    text: "I would like to arrange a simulated sales meeting to discuss my requirements.",
+    label: 'Schedule Sales Call',
+    prompt:
+      'Could we schedule a call with the commercial team for tomorrow at 10:30 AM joining from Mumbai?',
+  },
+  {
+    label: 'Global Offices & Contacts',
+    prompt:
+      'Could you share the contact details for your London headquarters, Dubai branch, and Nairobi hub?',
+  },
+  {
+    label: 'Polymers & Chemicals Portfolio',
+    prompt:
+      'What polymer families, MFI grades, and industrial chemicals does Aprirose supply?',
   },
 ];
 
 export default function App() {
-  const [status, setStatus] = useState<
-    "disconnected" | "connecting" | "connected" | "error"
-  >("disconnected");
-  const [detail, setDetail] = useState("Ready when you are");
-  const [muted, setMuted] = useState(false);
-  const [speaker, setSpeaker] = useState(true);
-  const [level, setLevel] = useState(0);
-  const [turns, setTurns] = useState<Turn[]>([welcome()]);
-  const [input, setInput] = useState("");
-  const [facts, setFacts] = useState<BuyerFacts>({});
-  const [evidence, setEvidence] = useState<Record<string, string>>({});
-  const [meeting, setMeeting] = useState<SimulatedMeetingState>({
-    status: "none",
-    validationNotes: [],
-  });
-  const [copied, setCopied] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [seconds, setSeconds] = useState(0);
-  const client = useRef<GeminiLiveReceptionistClient | null>(null);
-  const callId = useRef(0);
-  const active = useRef(false);
-  const factsRef = useRef<BuyerFacts>({});
-  const meetingRef = useRef<SimulatedMeetingState>({
-    status: "none",
-    validationNotes: [],
-  });
-  const pausedRef = useRef(false);
-  const conversation = useRef<HTMLDivElement>(null);
-  const userTurnId = useRef("");
-  const assistantTurnId = useRef("");
-  useEffect(() => {
-    const el = conversation.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [turns]);
-  useEffect(() => {
-    if (status !== "connected") return;
-    const timer = setInterval(() => setSeconds((s) => s + 1), 1000);
-    return () => clearInterval(timer);
-  }, [status]);
-  useEffect(
-    () => () => {
-      callId.current++;
-      client.current?.disconnect();
-    },
-    [],
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(
+    () =>
+      (import.meta as any).env?.VITE_GEMINI_API_KEY ||
+      localStorage.getItem('aprirose_gemini_api_key') ||
+      ''
   );
+  const [geminiModel, setGeminiModel] = useState<string>('gemini-3.8-live');
+  const [geminiVoice, setGeminiVoice] = useState<string>('Aoede');
+  const [showKeyModal, setShowKeyModal] = useState(false);
 
-  function mergeFacts(
-    next: Partial<BuyerFacts>,
-    quotes?: Record<string, string>,
-  ) {
-    factsRef.current = { ...factsRef.current, ...next };
-    setFacts(factsRef.current);
-    if (quotes) setEvidence((prev) => ({ ...prev, ...quotes }));
-  }
-  function mergeMeeting(next: Partial<SimulatedMeetingState>) {
-    const clean = Object.fromEntries(
-      Object.entries(next).filter(([, v]) => v !== undefined),
-    );
-    const candidate = { ...meetingRef.current, ...clean };
-    if (
-      candidate.status === "demo_booked" &&
-      !checkSimulatedMeetingReadiness(factsRef.current, candidate).canBookDemo
-    )
-      candidate.status = "collecting";
-    meetingRef.current = candidate;
-    setMeeting(candidate);
-  }
-  function processInput(text: string, fromLive = false) {
-    if (!text.trim()) return;
+  const [callStatus, setCallStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [statusDetail, setStatusDetail] = useState<string>('Ready to connect');
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [audioLevels, setAudioLevels] = useState<{ input: number; output: number }>({ input: 0, output: 0 });
+
+  const [transcript, setTranscript] = useState<TranscriptTurn[]>([
+    {
+      id: 'welcome-turn',
+      role: 'receptionist',
+      text: 'Welcome to Aprirose Trading Limited. Click "Start Call" to speak live with our AI Receptionist & Commercial Desk Specialist regarding polymer and chemical procurement, technical grade references, global offices, or scheduling a commercial consultation.',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    },
+  ]);
+  const [inputText, setInputText] = useState('');
+  const [buyerFacts, setBuyerFacts] = useState<BuyerFacts>({});
+  const [meetingState, setMeetingState] = useState<SimulatedMeetingState>({
+    status: 'none',
+    validationNotes: [],
+  });
+  const [humanPaused, setHumanPaused] = useState(false);
+
+  const [activeRightTab, setActiveRightTab] = useState<'crm' | 'kb'>('crm');
+  const [kbSubTab, setKbSubTab] = useState<'products' | 'mfi' | 'offices' | 'history' | 'compliance'>('products');
+  const [copiedSummary, setCopiedSummary] = useState(false);
+  const [showAllFields, setShowAllFields] = useState(false);
+
+  const liveClientRef = useRef<GeminiLiveReceptionistClient | null>(null);
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null);
+  const buyerFactsRef = useRef<BuyerFacts>(buyerFacts);
+  const meetingStateRef = useRef<SimulatedMeetingState>(meetingState);
+  const humanPausedRef = useRef<boolean>(humanPaused);
+
+  useEffect(() => {
+    buyerFactsRef.current = buyerFacts;
+  }, [buyerFacts]);
+
+  useEffect(() => {
+    meetingStateRef.current = meetingState;
+  }, [meetingState]);
+
+  useEffect(() => {
+    humanPausedRef.current = humanPaused;
+  }, [humanPaused]);
+
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [transcript]);
+
+  // Sync caller utterance into live CRM state alongside Gemini tool calls
+  const syncCallerUtteranceToCrm = (rawText: string) => {
+    const trimmed = rawText.trim();
+    if (!trimmed) return;
+
     const result = extractFactsAndProcessTurn(
-      text.trim(),
-      factsRef.current,
-      meetingRef.current,
-      pausedRef.current,
+      trimmed,
+      buyerFactsRef.current,
+      meetingStateRef.current,
+      humanPausedRef.current
     );
-    mergeFacts(result.updatedFacts, result.factEvidence);
-    if (result.updatedMeeting) mergeMeeting(result.updatedMeeting);
-    if (result.humanHandoffTriggered || result.humanHandoffResumed) {
-      pausedRef.current = Boolean(result.humanHandoffTriggered);
-      setPaused(pausedRef.current);
+
+    if (Object.keys(result.updatedFacts).length > 0) {
+      setBuyerFacts((prev) => ({ ...prev, ...result.updatedFacts }));
     }
-    if (fromLive) return;
-    const turn: Turn = {
-      id: crypto.randomUUID(),
-      role: "caller",
-      text: text.trim(),
-      time: time(),
-    };
-    if (active.current && client.current) {
-      setTurns((prev) => [...prev, turn]);
-      client.current.sendTextMessage(text.trim());
-    } else
-      setTurns((prev) => [
-        ...prev,
-        turn,
-        {
-          id: crypto.randomUUID(),
-          role: "receptionist",
-          text: result.replyText,
-          time: time(),
-        },
-      ]);
-    setInput("");
-  }
-  function streamTurn(role: Turn["role"], text: string, final: boolean) {
-    if (!text) return;
-    const ref = role === "caller" ? userTurnId : assistantTurnId;
-    if (!ref.current) ref.current = crypto.randomUUID();
-    const id = ref.current;
-    setTurns((prev) =>
-      prev.some((t) => t.id === id)
-        ? prev.map((t) => (t.id === id ? { ...t, text } : t))
-        : [...prev, { id, role, text, time: time() }],
-    );
-    if (final) ref.current = "";
-  }
-  function endCall() {
-    callId.current++;
-    active.current = false;
-    client.current?.disconnect();
-    client.current = null;
-    setStatus("disconnected");
-    setDetail("Call ended. Start again whenever you like.");
-    setLevel(0);
-  }
-  async function toggleCall() {
-    if (status === "connected" || status === "connecting") {
-      endCall();
+    if (result.updatedMeeting) {
+      setMeetingState((prev) => ({ ...prev, ...result.updatedMeeting }));
+    }
+    if (result.humanHandoffTriggered) {
+      setHumanPaused(true);
+    } else if (result.humanHandoffResumed) {
+      setHumanPaused(false);
+    }
+  };
+
+  const startLiveCall = async (overrideKey?: string) => {
+    const keyToUse = (overrideKey ?? geminiApiKey).trim();
+    if (!keyToUse) {
+      setShowKeyModal(true);
       return;
     }
-    const id = ++callId.current;
-    setStatus("connecting");
-    setDetail("Preparing your call…");
-    setMuted(false);
-    setSeconds(0);
-    userTurnId.current = "";
-    assistantTurnId.current = "";
-    if (id !== callId.current) return;
-    const live = new GeminiLiveReceptionistClient({
-      onStatusChange: (next, message) => {
-        if (id !== callId.current) return;
-        active.current = next === "connected";
-        setStatus(next);
-        if (message) setDetail(message);
+
+    const client = new GeminiLiveReceptionistClient({
+      onStatusChange: (status, detail) => {
+        setCallStatus(status);
+        if (detail) setStatusDetail(detail);
       },
-      onUserTranscript: (text, final) => {
-        if (id !== callId.current) return;
-        streamTurn("caller", text, final);
-        if (final) processInput(text, true);
-      },
-      onAssistantTranscript: (text, final) => {
-        if (id === callId.current) streamTurn("receptionist", text, final);
-      },
-      onFactsUpdated: (next, quotes) => {
-        if (id === callId.current) mergeFacts(next, quotes);
-      },
-      onMeetingUpdated: (next) => {
-        if (id === callId.current) mergeMeeting(next);
-      },
-      onHumanHandoff: (value) => {
-        if (id === callId.current) {
-          pausedRef.current = value;
-          setPaused(value);
+      onUserTranscript: (text, isFinal) => {
+        if (isFinal && text.trim()) {
+          syncCallerUtteranceToCrm(text);
         }
+        setTranscript((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'caller' && last.id.startsWith('live-user-')) {
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...last,
+                id: isFinal ? `caller-final-${Date.now()}` : last.id,
+                text: isFinal ? text : `${last.text} ${text}`.trim(),
+              },
+            ];
+          }
+          return [
+            ...prev,
+            {
+              id: isFinal ? `caller-final-${Date.now()}` : `live-user-${Date.now()}`,
+              role: 'caller',
+              text,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            },
+          ];
+        });
       },
-      onAudioLevel: (i, o) => {
-        if (id === callId.current) setLevel(Math.max(i, o));
+      onAssistantTranscript: (text, isFinal) => {
+        setTranscript((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'receptionist' && last.id.startsWith('live-rec-')) {
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...last,
+                id: isFinal ? `rec-final-${Date.now()}` : last.id,
+                text: `${last.text}${text}`,
+              },
+            ];
+          }
+          return [
+            ...prev,
+            {
+              id: isFinal ? `rec-final-${Date.now()}` : `live-rec-${Date.now()}`,
+              role: 'receptionist',
+              text,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            },
+          ];
+        });
+      },
+      onFactsUpdated: (facts) => {
+        setBuyerFacts((prev) => ({ ...prev, ...facts }));
+      },
+      onMeetingUpdated: (meeting) => {
+        setMeetingState((prev) => ({ ...prev, ...meeting }));
+      },
+      onHumanHandoff: (paused) => {
+        setHumanPaused(paused);
+      },
+      onAudioLevel: (input, output) => {
+        setAudioLevels({ input, output });
       },
     });
-    client.current = live;
-    live.setSpeakerEnabled(speaker);
-    await live.connect();
-  }
-  function reset() {
-    endCall();
-    factsRef.current = {};
-    meetingRef.current = { status: "none", validationNotes: [] };
-    pausedRef.current = false;
-    setFacts({});
-    setEvidence({});
-    setMeeting(meetingRef.current);
-    setPaused(false);
-    setTurns([welcome()]);
-    setInput("");
-    setDetail("Ready when you are");
-    setCopied(false);
-  }
-  async function copySummary() {
-    const summary = [
-      "Aprirose Trading Limited — Demo enquiry",
-      ...fields
-        .filter(([key]) => facts[key])
-        .map(([key, label]) => `${label}: ${facts[key]}`),
-      meeting.status !== "none"
-        ? `Simulated meeting: ${meeting.status} — ${[meeting.date, meeting.clockTime, meeting.amPm, meeting.timezone].filter(Boolean).join(" ")}`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
+
+    liveClientRef.current = client;
     try {
-      await navigator.clipboard.writeText(summary);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await client.connect(keyToUse, geminiModel, geminiVoice);
     } catch {
-      setDetail(
-        "Copy unavailable in this browser. Select the enquiry details to copy them.",
-      );
+      // Handled via onStatusChange
     }
-  }
-  const readiness = checkCommercialReadiness(facts);
-  const connected = status === "connected";
-  const busy = connected || status === "connecting";
-  const captured = fields.filter(([key]) => Boolean(facts[key]));
+  };
+
+  const handleToggleCall = async () => {
+    if (callStatus === 'connected' || callStatus === 'connecting') {
+      if (liveClientRef.current) {
+        liveClientRef.current.disconnect();
+        liveClientRef.current = null;
+      }
+      setAudioLevels({ input: 0, output: 0 });
+      setCallStatus('disconnected');
+      setStatusDetail('Call ended');
+      return;
+    }
+
+    await startLiveCall();
+  };
+
+  const handleSendPromptToCall = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    syncCallerUtteranceToCrm(trimmed);
+
+    const callerTurn: TranscriptTurn = {
+      id: `caller-${Date.now()}`,
+      role: 'caller',
+      text: trimmed,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setTranscript((prev) => [...prev, callerTurn]);
+
+    if (callStatus === 'connected' && liveClientRef.current) {
+      liveClientRef.current.sendTextMessage(trimmed);
+    } else if (!geminiApiKey.trim()) {
+      setShowKeyModal(true);
+    } else {
+      await startLiveCall();
+      setTimeout(() => {
+        liveClientRef.current?.sendTextMessage(trimmed);
+      }, 900);
+    }
+  };
+
+  const handleToggleMicMute = () => {
+    const nextMute = !isMicMuted;
+    setIsMicMuted(nextMute);
+    if (liveClientRef.current) {
+      liveClientRef.current.setMuted(nextMute);
+    }
+  };
+
+  const handleResetSession = () => {
+    setBuyerFacts({});
+    setMeetingState({ status: 'none', validationNotes: [] });
+    setHumanPaused(false);
+    setTranscript([
+      {
+        id: `welcome-${Date.now()}`,
+        role: 'receptionist',
+        text: 'Session reset. Click "Start Call" to begin a new live voice inquiry with Aprirose Trading Limited.',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
+  };
+
+  const readiness = checkCommercialReadiness(buyerFacts);
+
+  const formatLeadSummaryText = () => {
+    return [
+      'New Buyer Inquiry — Aprirose Trading Limited',
+      `• Company: ${buyerFacts.company || 'Pending'}`,
+      `• Country: ${buyerFacts.companyCountry || 'Pending'}`,
+      `• Buyer Type: ${buyerFacts.buyerType || 'Pending'}`,
+      `• Product: ${buyerFacts.material || 'Pending'}${buyerFacts.application ? ` (${buyerFacts.application})` : ''}`,
+      `• Grade / MFI: ${[buyerFacts.requestedGrade, buyerFacts.mfi, buyerFacts.preferredProducer].filter(Boolean).join(' | ') || 'For commercial discussion'}`,
+      `• Order Quantity: ${buyerFacts.quantity || 'Pending'}`,
+      `• Monthly Volume: ${buyerFacts.monthlyVolume || 'Not specified'}`,
+      `• Payment Term: ${buyerFacts.paymentTermsRequested || 'Not specified'}`,
+      `• Shipping Term: ${buyerFacts.shippingTermRequested || 'Not specified'}`,
+      `• Destination: ${[buyerFacts.dischargePort, buyerFacts.destinationCity, buyerFacts.destinationCountry].filter(Boolean).join(', ') || 'Pending'}`,
+      `• Contact: ${buyerFacts.contactName || 'Pending'}`,
+      `• Email: ${buyerFacts.email || 'Pending'}`,
+      `• WhatsApp / Phone: ${buyerFacts.phone || 'Pending'}`,
+      `• Meeting Consultation: ${
+        meetingState.status === 'demo_booked'
+          ? `Confirmed (${meetingState.date} at ${meetingState.clockTime} ${meetingState.amPm || ''} — ${meetingState.timezone})`
+          : 'Not scheduled'
+      }`,
+    ].join('\n');
+  };
+
+  const handleCopySummary = () => {
+    navigator.clipboard.writeText(formatLeadSummaryText());
+    setCopiedSummary(true);
+    setTimeout(() => setCopiedSummary(false), 2000);
+  };
 
   return (
-    <div className="app-shell">
-      <header className="site-header">
-        <a
-          className="brand"
-          href="/"
-          aria-label="Aprirose Trading Limited home"
-        >
-          <img src="/brand/aprirose-logo.png" alt="Aprirose Trading Limited" />
-        </a>
-        <div className="header-actions">
-          <span className="demo-label">Client preview</span>
-          <button className="quiet-button" onClick={reset}>
-            <RotateCcw size={15} />
-            <span>New conversation</span>
-          </button>
-        </div>
-      </header>
-      <main>
-        <div className="page-intro">
-          <div>
-            <p className="section-label">
-              Your commercial desk, in conversation
-            </p>
-            <h1>Let’s talk requirements.</h1>
-            <p>Speak with Aprirose. Watch your enquiry come together.</p>
+    <div className="min-h-screen flex flex-col bg-[#F4F7F6] text-[#0D2B2F]">
+      {/* EXECUTIVE TOP HEADER */}
+      <header className="bg-[#0B2E33] text-white border-b border-[#19464C] sticky top-0 z-30 shadow-xs">
+        <div className="max-w-[1560px] mx-auto px-4 sm:px-8 py-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-[#143F45] border border-[#285E66] flex items-center justify-center font-serif-editorial font-bold text-lg text-[#D8B47C]">
+              A
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <span className="tracking-[0.26em] font-semibold text-sm sm:text-base text-white">
+                  APRIROSE
+                </span>
+                <span className="h-3.5 w-[1px] bg-[#B88A4B]" />
+                <span className="text-xs uppercase tracking-[0.16em] text-[#D8C3A5] font-medium">
+                  Trading Limited
+                </span>
+              </div>
+              <p className="text-xs text-[#9BBEC2] mt-0.5">
+                London Headquarters · AI Voice Reception & Global Commercial Desk
+              </p>
+            </div>
           </div>
-          <span className="preview-note">
-            <span /> Interactive voice demo
-          </span>
-        </div>
-        <div className="workspace">
-          <section
-            className="conversation-side"
-            aria-label="Voice receptionist"
-          >
-            <div className="call-panel">
-              <div className="call-topline">
-                <span>
-                  <span className={`status-dot ${connected ? "live" : ""}`} />
-                  {connected
-                    ? "Call in progress"
-                    : "Aprirose voice receptionist"}
-                </span>
-                <span>
-                  {connected
-                    ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`
-                    : "Polymers & chemicals"}
-                </span>
-              </div>
-              <div className="call-body">
-                <div
-                  className={`voice-mark ${connected ? "active" : ""}`}
-                  style={{ transform: `scale(${1 + level * 0.09})` }}
-                >
-                  <Headphones size={32} strokeWidth={1.35} />
-                </div>
-                <div className="call-copy">
-                  <h2>
-                    {connected
-                      ? "We’re listening."
-                      : "A good conversation starts here."}
-                  </h2>
-                  <p>
-                    Products, quotations or a meeting with our team.
-                    <br />
-                    Tell us what you have in mind.
-                  </p>
-                </div>
-                <button
-                  className={`call-button ${busy ? "end-call" : ""}`}
-                  onClick={toggleCall}
-                >
-                  {busy ? <PhoneOff size={17} /> : <Phone size={17} />}
-                  <span>
-                    {status === "connecting"
-                      ? "Cancel call"
-                      : connected
-                        ? "End call"
-                        : "Start a call"}
-                  </span>
-                </button>
-              </div>
-              <div className="call-bottom">
-                <p
-                  className={status === "error" ? "error-text" : ""}
-                  role="status"
-                >
-                  {connected && muted ? "Microphone muted" : detail}
-                </p>
-                <div className="audio-controls">
-                  <button
-                    disabled={!connected}
-                    aria-label={muted ? "Unmute microphone" : "Mute microphone"}
-                    aria-pressed={muted}
-                    onClick={() => {
-                      const next = !muted;
-                      setMuted(next);
-                      client.current?.setMuted(next);
-                    }}
-                  >
-                    {muted ? <MicOff size={15} /> : <Mic size={15} />}
-                    <span>{muted ? "Mic off" : "Microphone"}</span>
-                  </button>
-                  <button
-                    aria-label={speaker ? "Mute speaker" : "Unmute speaker"}
-                    aria-pressed={!speaker}
-                    onClick={() => {
-                      setSpeaker(!speaker);
-                      client.current?.setSpeakerEnabled(!speaker);
-                    }}
-                  >
-                    {speaker ? <Volume2 size={15} /> : <VolumeX size={15} />}
-                    <span>{speaker ? "Speaker on" : "Speaker off"}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="conversation-panel">
-              <div className="panel-heading">
-                <h2>Conversation</h2>
-                <span>
-                  {connected ? "Live transcript" : "Speak or type below"}
-                </span>
-              </div>
-              <div
-                className="transcript"
-                ref={conversation}
-                role="log"
-                aria-label="Conversation transcript"
-                aria-live="polite"
-              >
-                {turns.map((turn) => (
-                  <article key={turn.id} className={`turn ${turn.role}`}>
-                    <div className="turn-meta">
-                      <strong>
-                        {turn.role === "caller" ? "You" : "Aprirose"}
-                      </strong>
-                      <time>{turn.time}</time>
-                    </div>
-                    <p>{turn.text}</p>
-                  </article>
-                ))}
-              </div>
-              <form
-                className="message-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  processInput(input);
-                }}
-              >
-                <label className="sr-only" htmlFor="message">
-                  Your message
-                </label>
-                <input
-                  id="message"
-                  placeholder="Or type your message…"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  autoComplete="off"
-                />
-                <button
-                  type="submit"
-                  aria-label="Send message"
-                  disabled={!input.trim() || status === "connecting"}
-                >
-                  <ArrowUp size={20} />
-                </button>
-              </form>
-            </div>
-            <div className="examples">
-              <span>Try an enquiry</span>
-              {examples.map((example) => (
-                <button
-                  key={example.label}
-                  disabled={status === "connecting"}
-                  onClick={() => processInput(example.text)}
-                >
-                  {example.label}
-                  <span>↗</span>
-                </button>
-              ))}
-            </div>
-          </section>
-          <aside className="enquiry-panel" aria-label="Live enquiry summary">
-            <div className="panel-heading">
-              <div>
-                <p className="section-label">Captured as you speak</p>
-                <h2>Your enquiry</h2>
-              </div>
-              <span className="live-tag">
-                <span /> Live
+
+          <div className="flex items-center gap-2.5">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#11393F] border border-[#215259] text-xs text-[#C7DFE1]">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  callStatus === 'connected'
+                    ? 'bg-emerald-400 animate-pulse'
+                    : geminiApiKey
+                    ? 'bg-[#D8B47C]'
+                    : 'bg-rose-400'
+                }`}
+              />
+              <span>
+                {callStatus === 'connected'
+                  ? 'Live Voice Active'
+                  : geminiApiKey
+                  ? 'Voice Line Ready'
+                  : 'API Key Required'}
               </span>
             </div>
-            <div className="readiness">
-              <div>
-                <span>Enquiry completeness</span>
-                <strong>{readiness.score}%</strong>
+
+            <button
+              onClick={() => setShowKeyModal(true)}
+              className="px-3.5 py-2 rounded-lg bg-[#143F45] hover:bg-[#1B5158] text-xs font-medium text-[#E8F1F1] border border-[#285E66] flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-[#D8B47C]" />
+              <span>{geminiApiKey ? 'Voice Settings' : 'Connect API Key'}</span>
+            </button>
+
+            <button
+              onClick={handleResetSession}
+              className="px-3 py-2 rounded-lg bg-[#143F45] hover:bg-[#1B5158] text-xs text-[#C7DFE1] border border-[#285E66] flex items-center gap-1.5 transition cursor-pointer"
+              title="Reset Inquiry"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">New Inquiry</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* MAIN WORKSPACE */}
+      <main className="flex-1 max-w-[1560px] w-full mx-auto px-4 sm:px-8 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* LEFT COLUMN (5 COLS): VOICE RECEPTIONIST CALL CONSOLE */}
+        <section className="lg:col-span-5 flex flex-col gap-4">
+          <div className="bg-white rounded-2xl border border-[#D5E0DF] shadow-xs overflow-hidden flex flex-col">
+            {/* Voice Receptionist Stage */}
+            <div className="bg-gradient-to-br from-[#0B2E33] via-[#103B41] to-[#082226] p-6 text-white relative">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      callStatus === 'connected'
+                        ? 'bg-emerald-400 animate-pulse'
+                        : callStatus === 'connecting'
+                        ? 'bg-amber-400 animate-ping'
+                        : callStatus === 'error'
+                        ? 'bg-rose-400'
+                        : 'bg-slate-400'
+                    }`}
+                  />
+                  <span className="text-xs font-medium tracking-wide text-[#B8D2D5]">
+                    {statusDetail}
+                  </span>
+                </div>
+
+                {humanPaused ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-500/20 text-amber-200 border border-amber-400/40">
+                    <UserCheck className="w-3.5 h-3.5" />
+                    Sales Representative Requested
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-[#9BBEC2] font-mono-tech">
+                    London Desk · +44 20 8951 0377
+                  </span>
+                )}
               </div>
-              <div className="progress-track">
-                <div style={{ width: `${readiness.score}%` }} />
+
+              {/* Central Interactive Call Orb */}
+              <div className="flex flex-col items-center justify-center py-5">
+                <div className="relative flex items-center justify-center">
+                  {callStatus === 'connected' && (
+                    <>
+                      <div
+                        className="absolute w-32 h-32 rounded-full bg-[#B88A4B]/30 animate-pulse-ring"
+                        style={{
+                          transform: `scale(${1 + Math.max(audioLevels.input, audioLevels.output) * 0.5})`,
+                        }}
+                      />
+                      <div className="absolute w-24 h-24 rounded-full bg-emerald-400/15 animate-pulse" />
+                    </>
+                  )}
+
+                  <button
+                    onClick={handleToggleCall}
+                    className={`relative z-10 w-24 h-24 rounded-full flex flex-col items-center justify-center transition-all duration-200 shadow-xl cursor-pointer ${
+                      callStatus === 'connected'
+                        ? 'bg-rose-600 hover:bg-rose-700 text-white ring-4 ring-rose-400/30'
+                        : callStatus === 'connecting'
+                        ? 'bg-amber-600 text-white ring-4 ring-amber-400/30'
+                        : 'bg-[#B88A4B] hover:bg-[#A3773C] text-white ring-4 ring-[#B88A4B]/30'
+                    }`}
+                  >
+                    {callStatus === 'connected' ? (
+                      <>
+                        <PhoneOff className="w-7 h-7 mb-1" />
+                        <span className="text-[11px] font-semibold uppercase tracking-wider">End Call</span>
+                      </>
+                    ) : (
+                      <>
+                        <Phone className="w-7 h-7 mb-1" />
+                        <span className="text-[11px] font-semibold uppercase tracking-wider">
+                          {callStatus === 'connecting' ? 'Connecting' : 'Start Call'}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="mt-4 text-center">
+                  <h2 className="text-lg font-serif-editorial font-semibold text-white">
+                    Aprirose AI Receptionist
+                  </h2>
+                  <p className="text-xs text-[#A9C6C9] mt-1 max-w-sm">
+                    {callStatus === 'connected'
+                      ? 'Connected — Speak naturally into your microphone. You may interrupt or ask questions at any time.'
+                      : 'Press Start Call to speak live regarding polymers, chemicals, pricing inquiries, or scheduling.'}
+                  </p>
+                </div>
+
+                {/* Microphone & Voice Controls */}
+                <div className="flex flex-wrap items-center justify-center gap-2.5 mt-5">
+                  <button
+                    onClick={handleToggleMicMute}
+                    disabled={callStatus !== 'connected'}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition cursor-pointer disabled:opacity-50 ${
+                      isMicMuted
+                        ? 'bg-rose-500/20 border-rose-400/40 text-rose-200'
+                        : 'bg-white/10 hover:bg-white/15 border-white/15 text-white'
+                    }`}
+                  >
+                    {isMicMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    {isMicMuted ? 'Microphone Muted' : 'Microphone Live'}
+                  </button>
+
+                  <select
+                    value={geminiVoice}
+                    onChange={(e) => setGeminiVoice(e.target.value)}
+                    disabled={callStatus === 'connected'}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/15 border border-white/15 text-white cursor-pointer focus:outline-none disabled:opacity-60"
+                    title="Receptionist Voice Persona"
+                  >
+                    <option value="Aoede" className="text-[#0D2B2F] bg-white">
+                      Voice: Aoede (Warm British/Intl)
+                    </option>
+                    <option value="Kore" className="text-[#0D2B2F] bg-white">
+                      Voice: Kore (Soft & Composed)
+                    </option>
+                    <option value="Leda" className="text-[#0D2B2F] bg-white">
+                      Voice: Leda (Clear & Expressive)
+                    </option>
+                  </select>
+                </div>
               </div>
-              <p>
-                {readiness.isReady
-                  ? "Ready for commercial review."
-                  : captured.length
-                    ? `${captured.length} details captured. Keep the conversation going.`
-                    : "Details appear here as you share them."}
-              </p>
             </div>
-            <div className="enquiry-fields">
-              {fields.slice(0, 16).map(([key, label]) => (
+
+            {/* Quick Conversation Starters */}
+            <div className="px-4 py-3 bg-[#EDF3F2] border-b border-[#D5E0DF]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#3B5E63] flex items-center gap-1.5 mb-2">
+                <Sparkles className="w-3.5 h-3.5 text-[#B88A4B]" />
+                Quick Inquiry Topics
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_TOPICS.map((item, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleSendPromptToCall(item.prompt)}
+                    className="text-left text-[11px] px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#0B2E33] text-[#0B2E33] hover:text-white border border-[#C6D6D5] transition font-medium cursor-pointer shadow-2xs"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Live Call Transcript */}
+            <div className="p-4 h-[380px] overflow-y-auto space-y-3 bg-[#F9FBFA]">
+              {transcript.map((turn) => (
                 <div
-                  className={`fact ${facts[key] ? "filled" : ""}`}
-                  key={key}
-                  title={evidence[key] || undefined}
+                  key={turn.id}
+                  className={`flex flex-col ${
+                    turn.role === 'caller' ? 'items-end' : 'items-start'
+                  }`}
                 >
-                  <span>{label}</span>
-                  <strong>{facts[key] || "—"}</strong>
-                  {facts[key] ? <Check size={13} /> : null}
+                  <div className="flex items-center gap-2 mb-1 px-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-[#4A6B70]">
+                      {turn.role === 'caller' ? 'Caller' : 'Aprirose Reception'}
+                    </span>
+                    <span className="text-[10px] text-[#7A969A] font-mono-tech">{turn.timestamp}</span>
+                  </div>
+
+                  <div
+                    className={`max-w-[88%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-2xs ${
+                      turn.role === 'caller'
+                        ? 'bg-[#0B2E33] text-white rounded-br-xs'
+                        : 'bg-white text-[#0D2B2F] border border-[#D5E0DF] rounded-bl-xs'
+                    }`}
+                  >
+                    <p>{turn.text}</p>
+                  </div>
                 </div>
               ))}
+              <div ref={transcriptEndRef} />
             </div>
-            {fields.slice(16).some(([key]) => facts[key]) ? (
-              <details className="extra-details" open>
-                <summary>
-                  Additional details
-                  <ChevronDown size={14} />
-                </summary>
-                {fields
-                  .slice(16)
-                  .filter(([key]) => facts[key])
-                  .map(([key, label]) => (
-                    <div className="fact filled" key={key}>
-                      <span>{label}</span>
-                      <strong>{facts[key]}</strong>
+
+            {/* Optional Written Input During Call */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!inputText.trim()) return;
+                handleSendPromptToCall(inputText);
+                setInputText('');
+              }}
+              className="p-3 bg-white border-t border-[#D5E0DF] flex items-center gap-2"
+            >
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder="Type an email, grade, or message to send during the call..."
+                className="flex-1 text-sm px-3.5 py-2 rounded-xl border border-[#C6D6D5] bg-[#F6F9F8] focus:outline-none focus:border-[#0B2E33]"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-[#0B2E33] hover:bg-[#14454C] text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" />
+                Send
+              </button>
+            </form>
+          </div>
+        </section>
+
+        {/* RIGHT COLUMN (7 COLS): LIVE COMMERCIAL CRM & CORPORATE KNOWLEDGE BASE */}
+        <section className="lg:col-span-7 flex flex-col gap-4">
+          {/* Navigation Bar */}
+          <div className="bg-white rounded-xl p-1.5 border border-[#D5E0DF] flex flex-wrap gap-1.5 shadow-2xs">
+            <button
+              onClick={() => setActiveRightTab('crm')}
+              className={`flex-1 min-w-[200px] py-2.5 px-4 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer ${
+                activeRightTab === 'crm'
+                  ? 'bg-[#0B2E33] text-white shadow-xs'
+                  : 'text-[#3B5E63] hover:bg-[#EAF0EF]'
+              }`}
+            >
+              <FileText className="w-4 h-4 text-[#D8B47C]" />
+              Live Buyer Qualification & Meeting Desk ({readiness.score}%)
+            </button>
+
+            <button
+              onClick={() => setActiveRightTab('kb')}
+              className={`flex-1 min-w-[200px] py-2.5 px-4 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer ${
+                activeRightTab === 'kb'
+                  ? 'bg-[#0B2E33] text-white shadow-xs'
+                  : 'text-[#3B5E63] hover:bg-[#EAF0EF]'
+              }`}
+            >
+              <BookOpen className="w-4 h-4 text-[#D8B47C]" />
+              Aprirose Corporate Portfolio & Global Directory
+            </button>
+          </div>
+
+          {/* TAB 1: LIVE COMMERCIAL CRM & MEETING DESK */}
+          {activeRightTab === 'crm' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Live Buyer Inquiry Summary Card */}
+                <div className="bg-white rounded-2xl border border-[#D5E0DF] p-5 shadow-2xs flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 pb-3 border-b border-[#E6EEEE]">
+                      <div>
+                        <span className="text-[10px] font-mono-tech uppercase tracking-widest text-[#B88A4B] font-semibold">
+                          Commercial Desk · Lead Summary
+                        </span>
+                        <h3 className="text-base font-serif-editorial font-semibold text-[#0B2E33]">
+                          New Buyer Inquiry
+                        </h3>
+                      </div>
+                      <button
+                        onClick={handleCopySummary}
+                        className="px-3 py-1.5 rounded-lg bg-[#EAF0EF] hover:bg-[#D8E5E3] text-[#0B2E33] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                      >
+                        {copiedSummary ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-700" />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            Copy for Sales
+                          </>
+                        )}
+                      </button>
                     </div>
-                  ))}
-              </details>
-            ) : null}
-            <div className="meeting-note">
-              <CheckCheck size={18} />
-              <div>
-                <strong>
-                  {meeting.status === "demo_booked"
-                    ? "Simulated meeting recorded"
-                    : meeting.status === "collecting"
-                      ? "Meeting details in progress"
-                      : "Planning a conversation with sales?"}
-                </strong>
-                <p>
-                  {meeting.status === "none"
-                    ? "Ask the receptionist to arrange a demo meeting."
-                    : [
-                        meeting.date,
-                        meeting.clockTime,
-                        meeting.amPm,
-                        meeting.timezone,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") ||
-                      "Share your preferred date, time and joining timezone."}
-                </p>
+
+                    {/* Qualification Readiness Meter */}
+                    <div className="my-3.5 bg-[#F4F8F7] rounded-xl p-3.5 border border-[#DCE7E6]">
+                      <div className="flex items-center justify-between text-xs mb-1.5">
+                        <span className="font-semibold text-[#0B2E33]">
+                          Buyer Qualification Progress
+                        </span>
+                        <span
+                          className={`font-mono-tech font-semibold px-2 py-0.5 rounded-full text-[11px] ${
+                            readiness.isReady
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {readiness.isReady ? 'Complete for Quotation' : `${readiness.score}%`}
+                        </span>
+                      </div>
+                      <div className="w-full h-2 bg-[#DCE7E6] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#0B2E33] transition-all duration-300"
+                          style={{ width: `${readiness.score}%` }}
+                        />
+                      </div>
+                      {!readiness.isReady && (
+                        <p className="text-[11px] text-[#527378] mt-1.5">
+                          Remaining details to gather: {readiness.missingCore.join(' · ')}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Structured Lead Fields */}
+                    <ul className="space-y-2 text-xs mt-3">
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Company:</span>
+                        <span className="font-semibold text-[#0D2B2F]">{buyerFacts.company || '—'}</span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Country:</span>
+                        <span className="font-semibold text-[#0D2B2F]">{buyerFacts.companyCountry || '—'}</span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Business Type:</span>
+                        <span className="font-semibold text-[#0D2B2F]">{buyerFacts.buyerType || '—'}</span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Product & Application:</span>
+                        <span className="font-semibold text-[#0D2B2F]">
+                          {[buyerFacts.material, buyerFacts.application].filter(Boolean).join(' · ') || '—'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Grade / MFI / Producer:</span>
+                        <span className="font-semibold text-[#0D2B2F]">
+                          {[buyerFacts.requestedGrade, buyerFacts.mfi, buyerFacts.preferredProducer]
+                            .filter(Boolean)
+                            .join(' · ') || '—'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Order Quantity:</span>
+                        <span className="font-mono-tech font-semibold text-[#0B2E33]">
+                          {buyerFacts.quantity || '—'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Monthly Volume:</span>
+                        <span className="font-mono-tech font-semibold text-[#0D2B2F]">
+                          {buyerFacts.monthlyVolume || '—'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Payment & Shipping Terms:</span>
+                        <span className="font-semibold text-[#0D2B2F]">
+                          {[buyerFacts.paymentTermsRequested, buyerFacts.shippingTermRequested]
+                            .filter(Boolean)
+                            .join(' / ') || '—'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Destination Port / Country:</span>
+                        <span className="font-semibold text-[#0D2B2F]">
+                          {[buyerFacts.dischargePort, buyerFacts.destinationCountry]
+                            .filter(Boolean)
+                            .join(', ') || '—'}
+                        </span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Contact Name:</span>
+                        <span className="font-semibold text-[#0D2B2F]">{buyerFacts.contactName || '—'}</span>
+                      </li>
+                      <li className="flex justify-between py-1 border-b border-[#F0F4F4]">
+                        <span className="text-[#527378] font-medium">Email:</span>
+                        <span className="font-mono-tech text-[#0D2B2F]">{buyerFacts.email || '—'}</span>
+                      </li>
+                      <li className="flex justify-between py-1">
+                        <span className="text-[#527378] font-medium">WhatsApp / Phone:</span>
+                        <span className="font-mono-tech text-[#0D2B2F]">{buyerFacts.phone || '—'}</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Commercial Consultation / Meeting Scheduler Card */}
+                <div className="bg-white rounded-2xl border border-[#D5E0DF] p-5 shadow-2xs flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 pb-3 border-b border-[#E6EEEE]">
+                      <div>
+                        <span className="text-[10px] font-mono-tech uppercase tracking-widest text-[#B88A4B] font-semibold">
+                          Consultation Desk
+                        </span>
+                        <h3 className="text-base font-serif-editorial font-semibold text-[#0B2E33] flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-[#B88A4B]" />
+                          Commercial Meeting Schedule
+                        </h3>
+                      </div>
+
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-mono-tech font-semibold ${
+                          meetingState.status === 'demo_booked'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : meetingState.status === 'cancelled'
+                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                            : meetingState.status === 'collecting'
+                            ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {meetingState.status === 'demo_booked'
+                          ? 'DEMO BOOKED'
+                          : meetingState.status === 'cancelled'
+                          ? 'CANCELLED'
+                          : meetingState.status === 'collecting'
+                          ? 'COLLECTING DETAILS'
+                          : 'NOT SCHEDULED'}
+                      </span>
+                    </div>
+
+                    <div className="mt-3.5 bg-[#F4F8F7] rounded-xl p-3.5 border border-[#DCE7E6] space-y-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-[#527378]">Requested Date:</span>
+                        <span className="font-semibold text-[#0D2B2F]">{meetingState.date || '—'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#527378]">Requested Time:</span>
+                        <span className="font-mono-tech font-semibold text-[#0D2B2F]">
+                          {meetingState.clockTime
+                            ? `${meetingState.clockTime} ${
+                                meetingState.amPm && meetingState.amPm !== 'resolved_24h'
+                                  ? meetingState.amPm
+                                  : ''
+                              }`
+                            : '—'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#527378]">Joining Timezone:</span>
+                        <span className="font-mono-tech font-semibold text-[#0B2E33]">
+                          {meetingState.timezone || '—'}
+                        </span>
+                      </div>
+                      {meetingState.locationLabel && (
+                        <div className="flex justify-between">
+                          <span className="text-[#527378]">Joining Location:</span>
+                          <span className="font-medium text-[#0D2B2F]">{meetingState.locationLabel}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {meetingState.validationNotes && meetingState.validationNotes.length > 0 && (
+                      <div className="mt-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1">
+                        {meetingState.validationNotes.map((note, idx) => (
+                          <div key={idx} className="flex items-start gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                            <span>{note}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mt-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-[#4A6B70] mb-2">
+                        Meeting Confirmation Requirements:
+                      </p>
+                      <div className="space-y-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2
+                            className={`w-4 h-4 ${
+                              buyerFacts.contactName && buyerFacts.company
+                                ? 'text-emerald-600'
+                                : 'text-slate-300'
+                            }`}
+                          />
+                          <span>Caller Name & Company Name</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2
+                            className={`w-4 h-4 ${
+                              buyerFacts.email && buyerFacts.phone
+                                ? 'text-emerald-600'
+                                : 'text-slate-300'
+                            }`}
+                          />
+                          <span>Verified Email Address & Phone / WhatsApp</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2
+                            className={`w-4 h-4 ${
+                              buyerFacts.material ? 'text-emerald-600' : 'text-slate-300'
+                            }`}
+                          />
+                          <span>Product / Material Requirement</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2
+                            className={`w-4 h-4 ${
+                              meetingState.date &&
+                              meetingState.clockTime &&
+                              meetingState.amPm !== 'ambiguous' &&
+                              meetingState.timezone &&
+                              !meetingState.timezone.includes('Ambiguous')
+                                ? 'text-emerald-600'
+                                : 'text-slate-300'
+                            }`}
+                          />
+                          <span>Confirmed Date, Time (AM/PM) & Joining Timezone</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-[#E6EEEE] text-[11px] text-[#527378] leading-relaxed">
+                    Meetings booked through the interactive showcase are recorded as simulated bookings in the CRM for commercial team review.
+                  </div>
+                </div>
+              </div>
+
+              {/* Expandable Full 25-Field CRM View */}
+              <div className="bg-white rounded-2xl border border-[#D5E0DF] p-5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-mono-tech uppercase tracking-widest text-[#B88A4B] font-semibold">
+                      CRM Data Record
+                    </span>
+                    <h3 className="text-sm font-serif-editorial font-semibold text-[#0B2E33]">
+                      Complete 25-Field Buyer Profile
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setShowAllFields(!showAllFields)}
+                    className="text-xs font-semibold text-[#0B2E33] hover:text-[#B88A4B] flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{showAllFields ? 'Hide Extended Fields' : 'View All 25 CRM Fields'}</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {showAllFields && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs mt-4 pt-3 border-t border-[#E6EEEE]">
+                    {(
+                      [
+                        ['company', 'Company Name'],
+                        ['companyCountry', 'Company Country'],
+                        ['buyerType', 'Buyer Business Type'],
+                        ['contactName', 'Contact Name'],
+                        ['email', 'Email'],
+                        ['phone', 'Phone / WhatsApp'],
+                        ['material', 'Product / Material'],
+                        ['application', 'Application'],
+                        ['requestedGrade', 'Requested Grade'],
+                        ['mfi', 'MFI Specification'],
+                        ['technicalSpecification', 'Technical Spec'],
+                        ['quantity', 'Order Quantity'],
+                        ['monthlyVolume', 'Monthly Volume'],
+                        ['dischargePort', 'Discharge Port'],
+                        ['destinationCountry', 'Destination Country'],
+                        ['destinationCity', 'Destination City'],
+                        ['shippingTermRequested', 'Shipping Term (Incoterm)'],
+                        ['paymentTermsRequested', 'Payment Terms'],
+                        ['shipmentTiming', 'Shipment Timing'],
+                        ['preferredProducer', 'Preferred Producer'],
+                        ['preferredOrigin', 'Preferred Origin'],
+                        ['preferredContactMethod', 'Preferred Contact Method'],
+                        ['technicalDocumentRequested', 'Technical Doc Requested'],
+                        ['specialRequirements', 'Special Requirements'],
+                        ['equivalentGradeAcceptable', 'Equivalent Acceptable'],
+                      ] as [keyof BuyerFacts, string][]
+                    ).map(([key, label]) => {
+                      const val = buyerFacts[key];
+                      return (
+                        <div
+                          key={key}
+                          className={`p-2.5 rounded-xl border transition ${
+                            val
+                              ? 'bg-[#F2F8F7] border-[#9BC2BE]'
+                              : 'bg-[#FAFBFB] border-[#E5ECEB] opacity-75'
+                          }`}
+                        >
+                          <span className="text-[11px] font-medium text-[#4A6B70] block">{label}</span>
+                          <div className="font-semibold text-[#0D2B2F] mt-1 truncate">
+                            {val || <span className="text-[#9AB0B3] font-normal">—</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
-            {paused ? (
-              <p className="handoff-note">
-                Human follow-up requested. Your enquiry is captured here; this
-                demo does not transfer calls.
-              </p>
-            ) : null}
-            <button
-              className="copy-button"
-              disabled={!captured.length}
-              onClick={copySummary}
-            >
-              {copied ? <Check size={16} /> : <Copy size={16} />}
-              <span>{copied ? "Enquiry copied" : "Copy enquiry summary"}</span>
-            </button>
-            <p className="privacy-note">
-              Demo only. No orders, calendar invitations or staff notifications
-              are sent. Details stay in this page until you reset or close it.
-              Voice is processed by Google.
-            </p>
-          </aside>
-        </div>
-        <footer>
-          <span>Aprirose Trading Limited</span>
-          <span>Client testing preview · Calls up to 5 minutes</span>
-        </footer>
+          )}
+
+          {/* TAB 2: APRIROSE CORPORATE PORTFOLIO & GLOBAL DIRECTORY */}
+          {activeRightTab === 'kb' && (
+            <div className="bg-white rounded-2xl border border-[#D5E0DF] p-5 shadow-2xs space-y-4">
+              <div className="flex flex-wrap gap-1.5 pb-3 border-b border-[#E6EEEE]">
+                {(
+                  [
+                    ['products', 'Polymers, Chemicals & Brands'],
+                    ['mfi', 'Technical Grade & MFI Reference'],
+                    ['offices', 'Global Offices & Markets'],
+                    ['history', 'Company Milestones & Testimonials'],
+                    ['compliance', 'Compliance & ESG Policies'],
+                  ] as [typeof kbSubTab, string][]
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => setKbSubTab(id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                      kbSubTab === id
+                        ? 'bg-[#B88A4B] text-white'
+                        : 'bg-[#F2F6F5] text-[#35565B] hover:bg-[#E3ECEB]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {kbSubTab === 'products' && (
+                <div className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.polymers.map((poly) => (
+                      <div key={poly.group} className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF]">
+                        <h4 className="font-serif-editorial font-semibold text-sm text-[#0B2E33]">
+                          {poly.group}
+                        </h4>
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {poly.subtypes.map((s) => (
+                            <span
+                              key={s}
+                              className="px-2 py-0.5 rounded bg-white border border-[#C6D6D5] font-mono-tech text-[11px]"
+                            >
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-[#4A6B70]">
+                          <strong>Applications:</strong> {poly.applications.join(', ')}
+                        </p>
+                        <p className="mt-1 text-[11px] font-mono-tech text-[#0B2E33]">
+                          {poly.publicRangeSummary}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF]">
+                      <h4 className="font-semibold text-[#0B2E33] mb-1.5">Industrial Chemicals & PU</h4>
+                      <ul className="space-y-1 text-[#35565B]">
+                        {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.chemicals.map((c) => (
+                          <li key={c}>• {c}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF]">
+                      <h4 className="font-semibold text-[#0B2E33] mb-1.5">Additives & Bulk Commodities</h4>
+                      <ul className="space-y-1 text-[#35565B]">
+                        {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.additivesAndMasterbatches.map((a) => (
+                          <li key={a}>• {a}</li>
+                        ))}
+                      </ul>
+                      <h5 className="font-semibold text-[#0B2E33] mt-3 mb-1">Bulk Commodities</h5>
+                      <p className="text-[#35565B]">
+                        {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.bulkCommodities.join(' · ')}
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF]">
+                      <h4 className="font-semibold text-[#0B2E33] mb-1.5">Published Brands (Reference)</h4>
+                      <p className="text-[#35565B] mb-2">
+                        <strong>Polymers:</strong>{' '}
+                        {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.publishedBrands.polymers.join(', ')}
+                      </p>
+                      <p className="text-[#35565B] mb-2">
+                        <strong>Chemicals:</strong>{' '}
+                        {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.publishedBrands.chemicals.join(', ')}
+                      </p>
+                      <p className="text-[11px] text-[#68878B] italic">
+                        {APRIROSE_KNOWLEDGE_BASE.productsAndPortfolio.publishedBrands.boundaryNote}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {kbSubTab === 'mfi' && (
+                <div className="space-y-3 text-xs">
+                  <div className="p-3 rounded-xl bg-[#F4F8F7] border border-[#C6D6D5] text-[#2D4D52]">
+                    <strong>Technical Reference Note:</strong> Exact grade suitability, food-contact status, pressure ratings, and test conditions require manufacturer Technical Data Sheets (TDS) and commercial review.
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-[#0B2E33] text-white text-[11px] uppercase tracking-wider">
+                          <th className="py-2.5 px-3 rounded-tl-lg">Family</th>
+                          <th className="py-2.5 px-3">Grade / Process</th>
+                          <th className="py-2.5 px-3">MFI / Reference Range</th>
+                          <th className="py-2.5 px-3 rounded-tr-lg">Typical Applications</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#E5ECEB]">
+                        {APRIROSE_KNOWLEDGE_BASE.historicalMfiGrades.map((g, i) => (
+                          <tr key={i} className="hover:bg-[#F4F8F7]">
+                            <td className="py-2 px-3 font-mono-tech font-semibold text-[#0B2E33]">
+                              {g.family}
+                            </td>
+                            <td className="py-2 px-3 font-semibold">{g.gradeType}</td>
+                            <td className="py-2 px-3 font-mono-tech text-[#B88A4B] font-medium">
+                              {g.mfiOrSpec}
+                            </td>
+                            <td className="py-2 px-3 text-[#4A6B70]">{g.applications}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {kbSubTab === 'offices' && (
+                <div className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {APRIROSE_KNOWLEDGE_BASE.offices.map((off) => (
+                      <div key={off.id} className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF] space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-serif-editorial font-semibold text-sm text-[#0B2E33] flex items-center gap-1.5">
+                            <Building2 className="w-3.5 h-3.5 text-[#B88A4B]" />
+                            {off.city}, {off.country}
+                          </span>
+                          <span className="text-[10px] font-mono-tech px-2 py-0.5 rounded bg-[#0B2E33] text-white">
+                            {off.role}
+                          </span>
+                        </div>
+                        <p className="text-[#35565B]">{off.address}</p>
+                        <div className="flex flex-wrap gap-3 pt-1 font-mono-tech text-[11px] text-[#0B2E33]">
+                          <span>Tel: {off.phone}</span>
+                          <span>Email: {off.email}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF]">
+                    <h4 className="font-semibold text-[#0B2E33] mb-2 flex items-center gap-1.5">
+                      <Globe2 className="w-4 h-4 text-[#B88A4B]" />
+                      Selected Global Markets (25 Countries)
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {APRIROSE_KNOWLEDGE_BASE.selectedMarkets.map((m) => (
+                        <span
+                          key={m}
+                          className="px-2.5 py-1 rounded-lg bg-white border border-[#C6D6D5] text-[#0D2B2F] font-medium"
+                        >
+                          {m}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {kbSubTab === 'history' && (
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <h4 className="font-serif-editorial font-semibold text-sm text-[#0B2E33] mb-2">
+                      Corporate Timeline & Milestones (1996 – 2023)
+                    </h4>
+                    <div className="space-y-2">
+                      {APRIROSE_KNOWLEDGE_BASE.companyOverview.historicalTimeline.map((item) => (
+                        <div
+                          key={item.year}
+                          className="flex items-start gap-3 p-2.5 rounded-xl bg-[#F6F9F8] border border-[#E2ECEB]"
+                        >
+                          <span className="font-mono-tech font-bold text-[#B88A4B] px-2 py-0.5 bg-white rounded border border-[#DEC9A8]">
+                            {item.year}
+                          </span>
+                          <span className="text-[#2D4D52]">{item.event}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="font-serif-editorial font-semibold text-sm text-[#0B2E33] mb-2 flex items-center gap-1.5">
+                      <Award className="w-4 h-4 text-[#B88A4B]" />
+                      Published Client Testimonials
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {APRIROSE_KNOWLEDGE_BASE.customerTestimonials.map((t) => (
+                        <div key={t.person} className="p-3.5 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF]">
+                          <div className="font-semibold text-[#0B2E33]">
+                            {t.person} — <span className="text-[#B88A4B]">{t.role}, {t.company}</span>
+                          </div>
+                          <p className="text-[#35565B] mt-1 leading-relaxed">{t.summary}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {kbSubTab === 'compliance' && (
+                <div className="space-y-3 text-xs">
+                  {APRIROSE_KNOWLEDGE_BASE.compliancePolicies.map((pol) => (
+                    <div key={pol.id} className="p-4 rounded-xl bg-[#F6F9F8] border border-[#D5E0DF] space-y-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="font-serif-editorial font-semibold text-sm text-[#0B2E33] flex items-center gap-1.5">
+                          <ShieldCheck className="w-4 h-4 text-[#B88A4B]" />
+                          {pol.title}
+                        </h4>
+                        <span className="font-mono-tech text-[11px] px-2.5 py-0.5 rounded bg-white border border-[#C6D6D5] text-[#4A6B70]">
+                          {pol.coverageOrDate}
+                        </span>
+                      </div>
+                      <p className="font-medium text-[#2D4D52]">{pol.summary}</p>
+                      <ul className="space-y-1 text-[#4A6B70] pt-1">
+                        {pol.highlights.map((h, i) => (
+                          <li key={i}>• {h}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
       </main>
+
+      {/* VOICE SETTINGS & API KEY MODAL */}
+      {showKeyModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-[#D5E0DF] shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E6EEEE] pb-3">
+              <div>
+                <h3 className="text-base font-serif-editorial font-semibold text-[#0B2E33]">
+                  Aprirose Voice Receptionist Configuration
+                </h3>
+                <p className="text-xs text-[#527378]">
+                  Real-Time Bidirectional Voice & Live CRM Qualification
+                </p>
+              </div>
+              <button
+                onClick={() => setShowKeyModal(false)}
+                className="text-xs text-[#527378] hover:text-[#0B2E33] cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-semibold text-[#0B2E33] mb-1">
+                  Gemini Live API Key
+                </label>
+                <input
+                  type="password"
+                  value={geminiApiKey}
+                  onChange={(e) => {
+                    setGeminiApiKey(e.target.value);
+                    localStorage.setItem('aprirose_gemini_api_key', e.target.value);
+                  }}
+                  placeholder="Enter your Gemini API Key (AIzaSy...)"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#C6D6D5] font-mono-tech focus:outline-none focus:border-[#0B2E33]"
+                />
+                <p className="text-[11px] text-[#68878B] mt-1">
+                  Saved locally in your browser so calls connect immediately.
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[#0B2E33] mb-1">
+                  Voice Model
+                </label>
+                <select
+                  value={geminiModel}
+                  onChange={(e) => setGeminiModel(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-[#C6D6D5] bg-white"
+                >
+                  <option value="gemini-3.8-live">Gemini 3.8 Live (Ultra-Low Latency)</option>
+                  <option value="gemini-3.1-flash-live-preview">Gemini 3.1 Flash Live</option>
+                  <option value="gemini-2.5-flash-native-audio-preview-12-2025">
+                    Gemini 2.5 Native Audio
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[#0B2E33] mb-1">
+                  Receptionist Voice Persona
+                </label>
+                <select
+                  value={geminiVoice}
+                  onChange={(e) => setGeminiVoice(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-[#C6D6D5] bg-white"
+                >
+                  <option value="Aoede">Aoede (Warm British / International Feminine)</option>
+                  <option value="Kore">Kore (Soft, Composed Feminine)</option>
+                  <option value="Leda">Leda (Clear, Expressive Feminine)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowKeyModal(false)}
+                className="px-4 py-2 rounded-xl border border-[#C6D6D5] text-xs font-medium text-[#4A6B70] hover:bg-[#F4F8F7] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowKeyModal(false);
+                  if (geminiApiKey.trim() && callStatus === 'disconnected') {
+                    startLiveCall(geminiApiKey.trim());
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-[#0B2E33] hover:bg-[#14454C] text-white text-xs font-semibold cursor-pointer"
+              >
+                Save & Connect Voice
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

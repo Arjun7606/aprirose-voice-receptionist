@@ -1,58 +1,193 @@
-import { GoogleGenAI, Modality } from "@google/genai";
-import type {
+import { GoogleGenAI, Modality, Type, FunctionDeclaration } from '@google/genai';
+import {
+  buildVoiceReceptionistSystemPrompt,
   BuyerFacts,
   SimulatedMeetingState,
-} from "../data/apriroseKnowledge";
+} from '../data/apriroseKnowledge';
+
 export interface LiveSessionCallbacks {
-  onStatusChange: (
-    status: "disconnected" | "connecting" | "connected" | "error",
-    detail?: string,
-  ) => void;
-  onUserTranscript: (text: string, final: boolean) => void;
-  onAssistantTranscript: (text: string, final: boolean) => void;
-  onFactsUpdated: (
-    facts: Partial<BuyerFacts>,
-    evidence?: Record<string, string>,
-  ) => void;
+  onStatusChange: (status: 'disconnected' | 'connecting' | 'connected' | 'error', detail?: string) => void;
+  onUserTranscript: (text: string, isFinal: boolean) => void;
+  onAssistantTranscript: (text: string, isFinal: boolean) => void;
+  onFactsUpdated: (facts: Partial<BuyerFacts>, evidence?: Record<string, string>) => void;
   onMeetingUpdated: (meeting: Partial<SimulatedMeetingState>) => void;
   onHumanHandoff: (paused: boolean) => void;
-  onAudioLevel: (input: number, output: number) => void;
+  onAudioLevel: (inputLevel: number, outputLevel: number) => void;
 }
+
+const updateBuyerQualificationTool: FunctionDeclaration = {
+  name: 'update_buyer_qualification',
+  description:
+    'Record or update buyer qualification fields extracted from what the caller stated during the conversation. Keep order quantity and monthlyVolume separate. Never convert FCL containers into invented tonnage.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      company: { type: Type.STRING, description: 'Buyer company name' },
+      companyCountry: { type: Type.STRING, description: 'Country where the buyer company is based' },
+      buyerType: {
+        type: Type.STRING,
+        description: 'Buyer business activity/type (e.g., Manufacturer, Converter, Distributor / Trader, End User)',
+      },
+      contactName: { type: Type.STRING, description: 'Caller full name or first name' },
+      email: { type: Type.STRING, description: 'Caller email address' },
+      phone: { type: Type.STRING, description: 'Caller phone or WhatsApp number' },
+      material: {
+        type: Type.STRING,
+        description: 'Product or material family (e.g., PP Raffia, HDPE, LLDPE, LDPE, PVC, PET, Caustic Soda, Sodium Sulfate Anhydrous, TDI, Polyol)',
+      },
+      application: {
+        type: Type.STRING,
+        description: 'Intended application (e.g., Raffia, Injection, Film, Blow Moulding, Pipe, Rotomoulding, Bottle, Profiles)',
+      },
+      requestedGrade: { type: Type.STRING, description: 'Specific grade requested or discussed' },
+      mfi: { type: Type.STRING, description: 'Melt Flow Index (MFI) or IV/K-value specification' },
+      quantity: {
+        type: Type.STRING,
+        description: 'Order quantity with unit (e.g., 100 MT, 2 FCL, 500 KG). Independent from monthlyVolume.',
+      },
+      monthlyVolume: {
+        type: Type.STRING,
+        description: 'Regular monthly demand or consumption volume with unit',
+      },
+      dischargePort: {
+        type: Type.STRING,
+        description: 'Named destination discharge port (e.g., Mombasa, Tamatave, Lagos, Chittagong, Nhava Sheva)',
+      },
+      destinationCountry: { type: Type.STRING, description: 'Destination country for shipment' },
+      destinationCity: { type: Type.STRING, description: 'Destination city for shipment' },
+      shippingTermRequested: {
+        type: Type.STRING,
+        description: 'Incoterm / shipping term requested (e.g., CIF, CFR, FOB)',
+      },
+      paymentTermsRequested: {
+        type: Type.STRING,
+        description: 'Payment terms preference (e.g., T/T, LC, DA, OA)',
+      },
+      shipmentTiming: { type: Type.STRING, description: 'Requested shipment or delivery timing (never copy meeting time here)' },
+      preferredProducer: { type: Type.STRING, description: 'Preferred producer or brand (e.g., Sinopec, Borouge, Jinneng, SABIC)' },
+      preferredOrigin: { type: Type.STRING, description: 'Preferred country/region of origin' },
+      preferredContactMethod: { type: Type.STRING, description: 'Preferred contact channel (Email, WhatsApp, Phone)' },
+      technicalDocumentRequested: { type: Type.STRING, description: 'Requested technical documents (e.g., TDS, COA, MSDS)' },
+      equivalentGradeAcceptable: { type: Type.STRING, description: 'Whether equivalent grades are acceptable' },
+      evidenceQuote: { type: Type.STRING, description: 'Short verbatim quote from the caller supporting these facts' },
+    },
+  },
+};
+
+const updateSimulatedMeetingTool: FunctionDeclaration = {
+  name: 'update_simulated_meeting',
+  description:
+    'Update or confirm a simulated demo sales meeting. Only set status="demo_booked" when customer name, company name, email, phone, product requirement, future date, unambiguous clock time (with AM/PM), and valid timezone are all known.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      status: {
+        type: Type.STRING,
+        description: '"collecting", "demo_booked", or "cancelled"',
+      },
+      date: { type: Type.STRING, description: 'Meeting date' },
+      clockTime: { type: Type.STRING, description: 'Meeting clock time (e.g., 10:30)' },
+      amPm: { type: Type.STRING, description: '"AM", "PM", "resolved_24h", or "ambiguous"' },
+      timezone: {
+        type: Type.STRING,
+        description: 'IANA timezone (e.g., Asia/Kolkata, Europe/London, Asia/Dubai, Africa/Nairobi) or Ambiguous',
+      },
+      locationLabel: { type: Type.STRING, description: 'Joining city/country label' },
+    },
+    required: ['status'],
+  },
+};
+
+const requestHumanHandoffTool: FunctionDeclaration = {
+  name: 'request_human_handoff',
+  description: 'Pause or resume proactive qualification when the caller asks to speak to a human representative.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      paused: {
+        type: Type.BOOLEAN,
+        description: 'True when caller asks for a human; false when caller explicitly asks to resume qualification.',
+      },
+    },
+    required: ['paused'],
+  },
+};
+
+function downsampleTo16kPCM(float32Array: Float32Array, inputSampleRate: number): ArrayBuffer {
+  if (inputSampleRate === 16000) {
+    const buffer = new ArrayBuffer(float32Array.length * 2);
+    const view = new DataView(buffer);
+    for (let i = 0; i < float32Array.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32Array[i]));
+      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    }
+    return buffer;
+  }
+
+  const ratio = inputSampleRate / 16000;
+  const newLength = Math.round(float32Array.length / ratio);
+  const buffer = new ArrayBuffer(newLength * 2);
+  const view = new DataView(buffer);
+
+  for (let i = 0; i < newLength; i++) {
+    const srcIndex = Math.min(float32Array.length - 1, Math.floor(i * ratio));
+    const s = Math.max(-1, Math.min(1, float32Array[srcIndex]));
+    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return buffer;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToInt16Array(base64: string): Int16Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Int16Array(bytes.buffer);
+}
+
 export class GeminiLiveReceptionistClient {
-  private session: any;
-  private context: AudioContext | null = null;
-  private stream: MediaStream | null = null;
-  private source: MediaStreamAudioSourceNode | null = null;
-  private processor: AudioWorkletNode | ScriptProcessorNode | null = null;
-  private sink: GainNode | null = null;
-  private gain: GainNode | null = null;
-  private sources = new Set<AudioBufferSourceNode>();
-  private nextPlay = 0;
-  private closed = false;
-  private ready = false;
-  private muted = false;
-  private speaker = true;
-  private abort = new AbortController();
-  private timeout: ReturnType<typeof setTimeout> | undefined;
-  private rejectSetup: ((reason: Error) => void) | undefined;
-  private userText = "";
-  private assistantText = "";
-  private assistantHasSpoken = false;
-  private levelAt = 0;
-  constructor(private callbacks: LiveSessionCallbacks) {}
-  async connect() {
+  private session: any = null;
+  private inputAudioCtx: AudioContext | null = null;
+  private outputAudioCtx: AudioContext | null = null;
+  private mediaStream: MediaStream | null = null;
+  private processorNode: ScriptProcessorNode | null = null;
+  private nextPlayTime = 0;
+  private activeSources: AudioBufferSourceNode[] = [];
+  private callbacks: LiveSessionCallbacks;
+  private isMuted = false;
+
+  constructor(callbacks: LiveSessionCallbacks) {
+    this.callbacks = callbacks;
+  }
+
+  public setMuted(muted: boolean) {
+    this.isMuted = muted;
+  }
+
+  public async connect(apiKey: string, preferredModel = 'gemini-3.8-live', voiceName = 'Aoede') {
+    const candidateModels = Array.from(
+      new Set([
+        preferredModel,
+        'gemini-2.5-flash-native-audio-preview-12-2025',
+        'gemini-3.1-flash-live-preview',
+        'gemini-3.8-live',
+      ])
+    );
+
     try {
-      if (!navigator.mediaDevices?.getUserMedia)
-        throw Error("Microphone access needs HTTPS and a supported browser.");
-      // Unlock on the original tap. Share the hardware-rate context for iPhone.
-      const Audio = window.AudioContext || (window as any).webkitAudioContext;
-      this.context = new Audio({ latencyHint: "interactive" });
-      const resumed = this.context!.resume();
-      this.callbacks.onStatusChange(
-        "connecting",
-        "Allow microphone access to begin.",
-      );
-      this.stream = await navigator.mediaDevices.getUserMedia({
+      this.callbacks.onStatusChange('connecting', 'Requesting microphone access...');
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
           echoCancellation: true,
@@ -60,333 +195,310 @@ export class GeminiLiveReceptionistClient {
           autoGainControl: true,
         },
       });
-      await resumed;
-      if (this.closed) {
-        this.cleanup();
-        return;
-      }
-      this.gain = this.context!.createGain();
-      this.gain.gain.value = this.speaker ? 1 : 0;
-      this.gain.connect(this.context!.destination);
-      this.callbacks.onStatusChange("connecting", "Connecting to Aprirose…");
-      const response = await fetch("/api/voice/session", {
-        method: "POST",
-        signal: this.abort.signal,
-      });
-      const data = await response.json();
-      if (!response.ok || !data.token)
-        throw Error(data.error || "Voice is unavailable. Please try again.");
-      if (this.closed) return;
-      const ai = new GoogleGenAI({
-        apiKey: data.token,
-        httpOptions: { apiVersion: "v1alpha" },
-      });
-      let resolveSetup!: () => void;
-      const setup = new Promise<void>((resolve, reject) => {
-        resolveSetup = resolve;
-        this.rejectSetup = reject;
-      });
-      setup.catch(() => {});
-      const timer = setTimeout(
-        () =>
-          this.rejectSetup?.(Error("Connection timed out. Please try again.")),
-        15000,
+    } catch (micErr: any) {
+      this.callbacks.onStatusChange(
+        'error',
+        `Microphone access denied: ${micErr?.message || 'Please allow microphone access in your browser.'}`
       );
+      throw micErr;
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    let lastError: any = null;
+
+    for (const modelName of candidateModels) {
       try {
-        const connecting = ai.live.connect({
-          model: data.model,
-          config: { responseModalities: [Modality.AUDIO] },
-          callbacks: {
-            onopen: () => {},
-            onmessage: (message: any) => {
-              if (!this.closed) {
-                if (message.setupComplete) resolveSetup();
-                this.handleMessage(message);
-              }
+        this.callbacks.onStatusChange('connecting', `Connecting to Gemini Live (${modelName})...`);
+
+        const config: any = {
+          responseModalities: [Modality.AUDIO],
+          systemInstruction: {
+            parts: [{ text: buildVoiceReceptionistSystemPrompt() }],
+          },
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName,
+              },
             },
-            onerror: () =>
-              this.fail(
-                "The connection was interrupted. Please start a new call.",
-              ),
-            onclose: () => {
-              if (!this.closed)
-                this.fail("The call disconnected. Please start a new call.");
+          },
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+          tools: [
+            {
+              functionDeclarations: [
+                updateBuyerQualificationTool,
+                updateSimulatedMeetingTool,
+                requestHumanHandoffTool,
+              ],
+            },
+          ],
+        };
+
+        this.outputAudioCtx = new AudioContext({ sampleRate: 24000 });
+        if (this.outputAudioCtx.state === 'suspended') {
+          await this.outputAudioCtx.resume();
+        }
+        this.nextPlayTime = this.outputAudioCtx.currentTime;
+
+        this.session = await ai.live.connect({
+          model: modelName,
+          config,
+          callbacks: {
+            onopen: () => {
+              this.callbacks.onStatusChange('connected', `Live Voice Call Active (${modelName})`);
+            },
+            onmessage: (message: any) => {
+              this.handleServerMessage(message);
+            },
+            onerror: (err: any) => {
+              console.error('Gemini Live error:', err);
+              this.callbacks.onStatusChange('error', err?.message || 'Live API WebSocket error');
+            },
+            onclose: (ev: any) => {
+              this.callbacks.onStatusChange('disconnected', ev?.reason || 'Call ended');
+              this.cleanupAudio();
             },
           },
         });
-        connecting
-          .then((s) => {
-            if (this.closed) s.close();
-          })
-          .catch(() => {});
-        this.session = await Promise.race([
-          connecting,
-          setup.then(() => connecting),
-        ]);
-        await setup;
-      } finally {
-        clearTimeout(timer);
+
+        await this.startMicrophonePipeline();
+
+        this.sendTextMessage(
+          'A caller just connected to the Apree-rose Trading Limited voice receptionist line. Greet them warmly with a natural, realistic feminine voice on behalf of Apree-rose Trading Limited in 2 sentences and ask how you can help them today. Remember: never say "Thank you, [Company Name]" or "Thank you and [Company Name]" when the caller tells you their company name.'
+        );
+        return;
+      } catch (err: any) {
+        console.warn(`Model ${modelName} failed to connect, trying next fallback if available...`, err);
+        lastError = err;
       }
-      if (this.closed) {
-        this.session?.close();
+    }
+
+    this.cleanupAudio();
+    this.callbacks.onStatusChange(
+      'error',
+      lastError?.message || 'Could not connect to Gemini Live API. Please check your API key.'
+    );
+    throw lastError;
+  }
+
+  public sendTextMessage(text: string) {
+    if (!this.session) return;
+    const phoneticText = text.replace(/\bAprirose\b/gi, 'Apree-rose');
+    try {
+      this.session.sendRealtimeInput({ text: phoneticText });
+    } catch {
+      try {
+        this.session.sendClientContent({
+          turns: [{ role: 'user', parts: [{ text: phoneticText }] }],
+          turnComplete: true,
+        });
+      } catch (e) {
+        console.error('Failed to send text to Live session:', e);
+      }
+    }
+  }
+
+  private handleServerMessage(message: any) {
+    const content = message?.serverContent;
+
+    if (content?.interrupted) {
+      this.stopPlaybackQueue();
+    }
+
+    if (content?.inputTranscription?.text) {
+      this.callbacks.onUserTranscript(content.inputTranscription.text, Boolean(content.turnComplete));
+    }
+
+    if (content?.outputTranscription?.text) {
+      const normalizedTranscript = content.outputTranscription.text.replace(
+        /\bAp-?ree[\s-]*rose\b/gi,
+        'Aprirose'
+      );
+      this.callbacks.onAssistantTranscript(normalizedTranscript, Boolean(content.turnComplete));
+    }
+
+    if (content?.modelTurn?.parts) {
+      for (const part of content.modelTurn.parts) {
+        if (part.inlineData?.data) {
+          this.enqueueAudioChunk(part.inlineData.data);
+        }
+      }
+    }
+
+    if (message?.toolCall?.functionCalls) {
+      const functionResponses: any[] = [];
+      for (const fc of message.toolCall.functionCalls) {
+        const args = (fc.args || {}) as Record<string, any>;
+        if (fc.name === 'update_buyer_qualification') {
+          const { evidenceQuote, ...factFields } = args;
+          const cleanFacts: Partial<BuyerFacts> = {};
+          const evidenceMap: Record<string, string> = {};
+          for (const [k, v] of Object.entries(factFields)) {
+            if (typeof v === 'string' && v.trim()) {
+              (cleanFacts as any)[k] = v.trim();
+              if (evidenceQuote) evidenceMap[k] = evidenceQuote;
+            }
+          }
+          this.callbacks.onFactsUpdated(cleanFacts, evidenceMap);
+          functionResponses.push({
+            name: fc.name,
+            id: fc.id,
+            response: { result: 'Buyer qualification fields updated in live CRM.' },
+          });
+        } else if (fc.name === 'update_simulated_meeting') {
+          this.callbacks.onMeetingUpdated({
+            status: args.status || 'collecting',
+            date: args.date,
+            clockTime: args.clockTime,
+            amPm: args.amPm,
+            timezone: args.timezone,
+            locationLabel: args.locationLabel,
+            confirmedAt:
+              args.status === 'demo_booked'
+                ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : undefined,
+          });
+          functionResponses.push({
+            name: fc.name,
+            id: fc.id,
+            response: {
+              result: `Simulated meeting state updated to ${args.status}. Remember: label as DEMO/SIMULATED booking only.`,
+            },
+          });
+        } else if (fc.name === 'request_human_handoff') {
+          this.callbacks.onHumanHandoff(Boolean(args.paused));
+          functionResponses.push({
+            name: fc.name,
+            id: fc.id,
+            response: { result: `Human handoff state set to paused=${Boolean(args.paused)}.` },
+          });
+        }
+      }
+
+      if (functionResponses.length > 0 && this.session) {
+        this.session.sendToolResponse({ functionResponses });
+      }
+    }
+  }
+
+  private async startMicrophonePipeline() {
+    if (!this.mediaStream) return;
+
+    this.inputAudioCtx = new AudioContext();
+    if (this.inputAudioCtx.state === 'suspended') {
+      await this.inputAudioCtx.resume();
+    }
+    const nativeRate = this.inputAudioCtx.sampleRate;
+    const source = this.inputAudioCtx.createMediaStreamSource(this.mediaStream);
+    this.processorNode = this.inputAudioCtx.createScriptProcessor(4096, 1, 1);
+
+    this.processorNode.onaudioprocess = (event) => {
+      if (this.isMuted || !this.session) {
+        this.callbacks.onAudioLevel(0, 0);
         return;
       }
-      await this.startCapture();
-      if (this.closed) return;
-      this.ready = true;
-      this.callbacks.onStatusChange("connected", "Listening. How can we help?");
-      this.sendTextMessage(
-        "A new caller connected. Greet once: Welcome to Ap-ree-rose Trading Limited. How can I help you today?",
-      );
-      this.timeout = setTimeout(
-        () =>
-          this.disconnect("Demo call complete. You can start another call."),
-        5 * 60000,
-      );
-    } catch (error: any) {
-      if (!this.closed)
-        this.fail(
-          error?.name === "NotAllowedError"
-            ? "Please allow microphone access in your browser, then try again."
-            : error?.message || "Could not connect. Please try again.",
-        );
-    }
-  }
-  private async startCapture() {
-    const context = this.context!;
-    this.source = context.createMediaStreamSource(this.stream!);
-    this.sink = context.createGain();
-    this.sink.gain.value = 0;
-    this.sink.connect(context.destination);
-    if (context.audioWorklet)
-      try {
-        await context.audioWorklet.addModule("/audio/pcm-capture.js");
-        if (this.closed) return;
-        const node = new AudioWorkletNode(context, "pcm-capture");
-        node.port.onmessage = ({ data }) => this.sendAudio(data.samples);
-        node.onprocessorerror = () =>
-          this.fail("Microphone audio stopped. Please reconnect.");
-        this.processor = node;
-      } catch {
-        /* Older browsers use hardware-rate ScriptProcessor capture. */
+      const inputData = event.inputBuffer.getChannelData(0);
+      let sum = 0;
+      for (let i = 0; i < inputData.length; i++) {
+        sum += inputData[i] * inputData[i];
       }
-    if (this.closed) return;
-    if (!this.processor) {
-      const node = context.createScriptProcessor(2048, 1, 1);
-      node.onaudioprocess = (event) =>
-        this.sendAudio(event.inputBuffer.getChannelData(0));
-      this.processor = node;
-    }
-    this.source.connect(this.processor);
-    this.processor.connect(this.sink);
-  }
-  private sendAudio(samples: Float32Array) {
-    if (!this.ready || this.closed || this.muted || !this.session) return;
-    const pcm = new Int16Array(samples.length);
-    let energy = 0;
-    for (let i = 0; i < samples.length; i++) {
-      const v = Math.max(-1, Math.min(1, samples[i]));
-      pcm[i] = v < 0 ? v * 32768 : v * 32767;
-      energy += v * v;
-    }
-    const now = performance.now();
-    if (now - this.levelAt > 100) {
-      this.levelAt = now;
-      this.callbacks.onAudioLevel(
-        Math.min(1, Math.sqrt(energy / samples.length) * 4),
-        this.sources.size ? 0.55 : 0,
-      );
-    }
-    const bytes = new Uint8Array(pcm.buffer);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++)
-      binary += String.fromCharCode(bytes[i]);
-    try {
-      this.session.sendRealtimeInput({
-        audio: {
-          data: btoa(binary),
-          mimeType: `audio/pcm;rate=${this.context!.sampleRate}`,
-        },
-      });
-    } catch {
-      this.fail("Microphone connection lost. Please reconnect.");
-    }
-  }
-  sendTextMessage(text: string) {
-    if (!this.ready || this.closed || !text.trim()) return;
-    this.assistantHasSpoken = false;
-    this.stopPlayback();
-    try {
-      this.session.sendClientContent({
-        turns: [{ role: "user", parts: [{ text }] }],
-        turnComplete: true,
-      });
-    } catch {
-      this.fail("Message could not be sent. Please reconnect.");
-    }
-  }
-  private handleMessage(message: any) {
-    const c = message.serverContent;
-    if (c?.interrupted) {
-      this.stopPlayback();
-      this.finishAssistant();
-    }
-    if (c?.inputTranscription?.text) {
-      if (!this.userText) this.assistantHasSpoken = false;
-      this.userText += c.inputTranscription.text;
-      this.callbacks.onUserTranscript(this.userText, false);
-    }
-    if (c?.inputTranscription?.finished) this.finishUser();
-    // Some native-audio models omit transcription.finished. The model beginning
-    // its reply also closes the caller turn, so qualification need not wait for
-    // the entire spoken answer to finish.
-    if (
-      (c?.outputTranscription?.text || c?.modelTurn?.parts?.length) &&
-      this.userText
-    )
-      this.finishUser();
-    if (c?.outputTranscription?.text && !c.interrupted) {
-      this.assistantHasSpoken = true;
-      this.assistantText += c.outputTranscription.text.replace(
-        /\bAp-?ree-?rose\b/gi,
-        "Aprirose",
-      );
-      this.callbacks.onAssistantTranscript(this.assistantText, false);
-    }
-    if (c?.outputTranscription?.finished) this.finishAssistant();
-    for (const part of c?.modelTurn?.parts || [])
-      if (!c.interrupted && part.inlineData?.data)
-        this.play(
-          part.inlineData.data,
-          Number(/rate=(\d+)/.exec(part.inlineData.mimeType || "")?.[1]) ||
-            24000,
-        );
-    const responses = [];
-    for (const call of message.toolCall?.functionCalls || []) {
-      const args = call.args || {};
-      if (call.name === "update_buyer_qualification") {
-        const { evidenceQuote, ...fields } = args;
-        const facts = Object.fromEntries(
-          Object.entries(fields).filter(
-            ([, v]) => typeof v === "string" && v.trim(),
-          ),
-        );
-        this.callbacks.onFactsUpdated(
-          facts,
-          Object.fromEntries(
-            Object.keys(facts).map((k) => [k, evidenceQuote || ""]),
-          ),
-        );
-      } else if (call.name === "update_simulated_meeting")
-        this.callbacks.onMeetingUpdated(args);
-      else if (call.name === "request_human_handoff")
-        this.callbacks.onHumanHandoff(Boolean(args.paused));
-      responses.push({
-        id: call.id,
-        name: call.name,
-        ...(call.name === "update_buyer_qualification"
-          ? { scheduling: this.assistantHasSpoken ? "SILENT" : "WHEN_IDLE" }
-          : {}),
-        response: {
-          result:
-            "Details recorded. Do not repeat your answer or re-ask for fields already supplied. MT means metric tonnes. If you have not yet answered, answer the caller now.",
-        },
-      });
-    }
-    if (responses.length && this.session)
-      this.session.sendToolResponse({ functionResponses: responses });
-    if (c?.turnComplete) {
-      this.finishUser();
-      this.finishAssistant();
-    }
-  }
-  private finishUser() {
-    if (this.userText) this.callbacks.onUserTranscript(this.userText, true);
-    this.userText = "";
-  }
-  private finishAssistant() {
-    if (this.assistantText)
-      this.callbacks.onAssistantTranscript(this.assistantText, true);
-    this.assistantText = "";
-  }
-  private play(data: string, rate: number) {
-    this.assistantHasSpoken = true;
-    if (!this.context || this.closed) return;
-    const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
-    const pcm = new Int16Array(bytes.buffer);
-    const buffer = this.context.createBuffer(1, pcm.length, rate);
-    buffer.copyToChannel(
-      Float32Array.from(pcm, (v) => v / 32768),
-      0,
-    );
-    const source = this.context.createBufferSource();
-    source.buffer = buffer;
-    source.connect(this.gain!);
-    const start = Math.max(this.context.currentTime + 0.015, this.nextPlay);
-    source.start(start);
-    this.nextPlay = start + buffer.duration;
-    this.sources.add(source);
-    source.onended = () => {
-      this.sources.delete(source);
-      source.disconnect();
-      if (!this.sources.size) this.callbacks.onAudioLevel(0, 0);
+      const rms = Math.min(1, Math.sqrt(sum / inputData.length) * 4);
+      this.callbacks.onAudioLevel(rms, 0);
+
+      const pcm16kBuffer = downsampleTo16kPCM(inputData, nativeRate);
+      const base64Audio = arrayBufferToBase64(pcm16kBuffer);
+
+      try {
+        this.session.sendRealtimeInput({
+          audio: {
+            data: base64Audio,
+            mimeType: 'audio/pcm;rate=16000',
+          },
+        });
+      } catch {
+        // Ignore transient send errors on close
+      }
     };
-    this.callbacks.onAudioLevel(0, this.speaker ? 0.55 : 0);
+
+    source.connect(this.processorNode);
+    this.processorNode.connect(this.inputAudioCtx.destination);
   }
-  setMuted(value: boolean) {
-    this.muted = value;
-    this.stream?.getAudioTracks().forEach((t) => (t.enabled = !value));
-    if (!value) this.context?.resume().catch(() => {});
-    if (value && this.ready)
-      this.session?.sendRealtimeInput({ audioStreamEnd: true });
+
+  private enqueueAudioChunk(base64Pcm24k: string) {
+    if (!this.outputAudioCtx) return;
+    const int16 = base64ToInt16Array(base64Pcm24k);
+    const float32 = new Float32Array(int16.length);
+    let sum = 0;
+    for (let i = 0; i < int16.length; i++) {
+      float32[i] = int16[i] / 32768.0;
+      sum += float32[i] * float32[i];
+    }
+    const outLevel = Math.min(1, Math.sqrt(sum / Math.max(1, float32.length)) * 3.5);
+    this.callbacks.onAudioLevel(0, outLevel);
+
+    const audioBuffer = this.outputAudioCtx.createBuffer(1, float32.length, 24000);
+    audioBuffer.copyToChannel(float32, 0);
+
+    const sourceNode = this.outputAudioCtx.createBufferSource();
+    sourceNode.buffer = audioBuffer;
+    sourceNode.connect(this.outputAudioCtx.destination);
+
+    const now = this.outputAudioCtx.currentTime;
+    const startAt = Math.max(now, this.nextPlayTime);
+    sourceNode.start(startAt);
+    this.nextPlayTime = startAt + audioBuffer.duration;
+    this.activeSources.push(sourceNode);
+
+    sourceNode.onended = () => {
+      this.activeSources = this.activeSources.filter((s) => s !== sourceNode);
+    };
   }
-  setSpeakerEnabled(value: boolean) {
-    this.speaker = value;
-    if (this.gain) this.gain.gain.value = value ? 1 : 0;
-    if (value) this.context?.resume().catch(() => {});
-  }
-  private stopPlayback() {
-    for (const s of this.sources)
+
+  private stopPlaybackQueue() {
+    for (const s of this.activeSources) {
       try {
         s.stop();
-      } catch {}
-    this.sources.clear();
-    this.nextPlay = this.context?.currentTime || 0;
+      } catch {
+        // already stopped
+      }
+    }
+    this.activeSources = [];
+    if (this.outputAudioCtx) {
+      this.nextPlayTime = this.outputAudioCtx.currentTime;
+    }
   }
-  private fail(detail: string) {
-    if (this.closed) return;
-    this.closed = true;
-    this.cleanup();
-    this.callbacks.onStatusChange("error", detail);
+
+  private cleanupAudio() {
+    this.stopPlaybackQueue();
+    if (this.processorNode) {
+      this.processorNode.disconnect();
+      this.processorNode = null;
+    }
+    if (this.inputAudioCtx) {
+      this.inputAudioCtx.close().catch(() => {});
+      this.inputAudioCtx = null;
+    }
+    if (this.outputAudioCtx) {
+      this.outputAudioCtx.close().catch(() => {});
+      this.outputAudioCtx = null;
+    }
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach((t) => t.stop());
+      this.mediaStream = null;
+    }
   }
-  private cleanup() {
-    this.ready = false;
-    this.abort.abort();
-    clearTimeout(this.timeout);
-    this.rejectSetup?.(Error("Call closed"));
-    this.rejectSetup = undefined;
-    try {
-      this.session?.close();
-    } catch {}
-    this.session = null;
-    this.stopPlayback();
-    if (this.processor && "port" in this.processor) {
-      this.processor.port.onmessage = null;
-      this.processor.port.close();
-    } else if (this.processor) this.processor.onaudioprocess = null;
-    this.processor?.disconnect();
-    this.source?.disconnect();
-    this.sink?.disconnect();
-    this.gain?.disconnect();
-    this.stream?.getTracks().forEach((t) => t.stop());
-    this.stream = null;
-    this.context?.close().catch(() => {});
-    this.context = null;
-    this.callbacks.onAudioLevel(0, 0);
-  }
-  disconnect(detail = "Call ended. Start again whenever you like.") {
-    this.closed = true;
-    this.cleanup();
-    this.callbacks.onStatusChange("disconnected", detail);
+
+  public disconnect() {
+    if (this.session) {
+      try {
+        this.session.close();
+      } catch {
+        // ignore
+      }
+      this.session = null;
+    }
+    this.cleanupAudio();
+    this.callbacks.onStatusChange('disconnected', 'Call ended');
   }
 }

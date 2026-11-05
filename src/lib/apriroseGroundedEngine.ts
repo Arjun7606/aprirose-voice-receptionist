@@ -1,5 +1,4 @@
 import {
-  APRIROSE_KNOWLEDGE_BASE,
   BuyerFacts,
   GroundedClaim,
   LOCATION_TIMEZONE_ALIASES,
@@ -111,21 +110,36 @@ export function extractFactsAndProcessTurn(
   }
 
   // 3. Extract Contact Name & Company
-  const nameMatch = text.match(/(?:my name is|i'm|i am|this is|contact name is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})/i);
-  if (nameMatch) {
-    const candidate = nameMatch[1].trim();
-    if (!/^(looking|calling|interested|from|based|asking|wondering|unsure)$/i.test(candidate.split(' ')[0])) {
-      updatedFacts.contactName = candidate;
-      factEvidence.contactName = nameMatch[0];
+  const companyExplicitMatch = text.match(
+    /(?:company\s*(?:name)?\s*is|we\s+are\s+called|representing|calling\s+from|work\s+(?:at|for))\s+([A-Z0-9][A-Za-z0-9\s&.-]{1,40})/i
+  );
+  const companySuffixMatch = text.match(
+    /(?:from|with|at|we are|it's|it is)?\s*([A-Z0-9][A-Za-z0-9\s&.-]{1,35}?\s+(?:Ltd|Limited|Inc|Corp|Plastics|Polymers|Industries|Packaging|Trading|Manufacturing|Group|Chemicals|Enterprise|Co|PLC|LLC)\.?)/i
+  );
+
+  if (companySuffixMatch) {
+    updatedFacts.company = companySuffixMatch[1].trim();
+    factEvidence.company = companySuffixMatch[0].trim();
+  } else if (companyExplicitMatch) {
+    const cleanedCompany = companyExplicitMatch[1]
+      .replace(/\b(and|based in|in|from|looking for|we need|we manufacture).*$/i, '')
+      .trim();
+    if (cleanedCompany.length >= 2) {
+      updatedFacts.company = cleanedCompany;
+      factEvidence.company = companyExplicitMatch[0].trim();
     }
   }
 
-  const companyMatch = text.match(
-    /(?:from|with|at|company is|company name is|representing|we are)\s+([A-Z0-9][A-Za-z0-9\s&.-]{2,35}?(?:Ltd|Limited|Inc|Corp|Plastics|Polymers|Industries|Packaging|Trading|Manufacturing|Group|Chemicals|Enterprise|Co|PLC|LLC)\.?)/i
-  );
-  if (companyMatch) {
-    updatedFacts.company = companyMatch[1].trim();
-    factEvidence.company = companyMatch[0];
+  const nameMatch = text.match(/(?:my name is|contact name is|i'm|i am|this is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})/i);
+  if (nameMatch && !updatedFacts.company) {
+    const candidate = nameMatch[1].trim();
+    if (
+      !/^(looking|calling|interested|from|based|asking|wondering|unsure|with|at)$/i.test(candidate.split(' ')[0]) &&
+      !/\b(Ltd|Limited|Inc|Corp|Plastics|Polymers|Industries|Packaging|Trading|Manufacturing|Group|Chemicals|Enterprise|Co|PLC|LLC)\b/i.test(candidate)
+    ) {
+      updatedFacts.contactName = candidate;
+      factEvidence.contactName = nameMatch[0];
+    }
   }
 
   // 4. Extract Buyer Type
@@ -491,15 +505,23 @@ export function extractFactsAndProcessTurn(
 
   if (!replyText) {
     if (newlyProvidedCount > 0) {
-      const ackParts: string[] = [];
-      if (updatedFacts.material) ackParts.push(updatedFacts.material);
-      if (updatedFacts.quantity) ackParts.push(updatedFacts.quantity);
+      const productParts: string[] = [];
+      if (updatedFacts.quantity) productParts.push(updatedFacts.quantity);
+      if (updatedFacts.material) productParts.push(updatedFacts.material);
       if (updatedFacts.dischargePort || updatedFacts.destinationCountry) {
-        ackParts.push(`for ${updatedFacts.dischargePort || updatedFacts.destinationCountry}`);
+        productParts.push(`to ${updatedFacts.dischargePort || updatedFacts.destinationCountry}`);
       }
-      if (updatedFacts.company) ackParts.push(`from ${updatedFacts.company}`);
 
-      const ackSummary = ackParts.length > 0 ? `Thank you—I have noted your requirement for ${ackParts.join(' ')}. ` : 'Thank you, I have recorded those details. ';
+      let ackSummary = 'Got it, thank you—I have noted those details on your inquiry. ';
+      if (productParts.length > 0 && updatedFacts.company) {
+        ackSummary = `Got it, thank you. I have noted ${updatedFacts.company}'s inquiry for ${productParts.join(' ')}. `;
+      } else if (productParts.length > 0) {
+        ackSummary = `Got it, thank you—I have noted your requirement for ${productParts.join(' ')}. `;
+      } else if (updatedFacts.company) {
+        ackSummary = `Got it, I have noted your company name as ${updatedFacts.company}. `;
+      } else if (updatedFacts.contactName) {
+        ackSummary = `Pleasure speaking with you, ${updatedFacts.contactName}. `;
+      }
 
       if (readiness.isReady) {
         replyText = `${ackSummary}We now have a complete buyer qualification summary for our commercial team, including your product specification, quantity, destination, commercial context, and contact details. Would you like to schedule a simulated sales meeting with our team, or is there any specific grade or producer preference you would like to add?`;
