@@ -3,6 +3,8 @@ import {
   buildVoiceReceptionistSystemPrompt,
   BuyerFacts,
   SimulatedMeetingState,
+  VOICE_PERSONA_OPTIONS,
+  VoicePersonaOption,
 } from '../data/apriroseKnowledge';
 
 export interface LiveSessionCallbacks {
@@ -175,7 +177,17 @@ export class GeminiLiveReceptionistClient {
     this.isMuted = muted;
   }
 
-  public async connect(apiKey: string, preferredModel = 'gemini-3.8-live', voiceName = 'Aoede') {
+  public async connect(
+    apiKey: string,
+    preferredModel = 'gemini-3.8-live',
+    voicePersonaOrId: string | VoicePersonaOption = 'uk_aoede'
+  ) {
+    const persona: VoicePersonaOption =
+      typeof voicePersonaOrId === 'string'
+        ? VOICE_PERSONA_OPTIONS.find((p) => p.id === voicePersonaOrId || p.prebuiltVoice === voicePersonaOrId) ||
+          VOICE_PERSONA_OPTIONS[0]
+        : voicePersonaOrId;
+
     const candidateModels = Array.from(
       new Set([
         preferredModel,
@@ -208,17 +220,20 @@ export class GeminiLiveReceptionistClient {
 
     for (const modelName of candidateModels) {
       try {
-        this.callbacks.onStatusChange('connecting', `Connecting to Gemini Live (${modelName})...`);
+        this.callbacks.onStatusChange(
+          'connecting',
+          `Connecting ${persona.receptionistName} (${persona.accentSummary})...`
+        );
 
         const config: any = {
           responseModalities: [Modality.AUDIO],
           systemInstruction: {
-            parts: [{ text: buildVoiceReceptionistSystemPrompt() }],
+            parts: [{ text: buildVoiceReceptionistSystemPrompt(persona) }],
           },
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                voiceName,
+                voiceName: persona.prebuiltVoice,
               },
             },
           },
@@ -246,7 +261,10 @@ export class GeminiLiveReceptionistClient {
           config,
           callbacks: {
             onopen: () => {
-              this.callbacks.onStatusChange('connected', `Live Voice Call Active (${modelName})`);
+              this.callbacks.onStatusChange(
+                'connected',
+                `Live Voice Active · ${persona.receptionistName} (${persona.accentSummary})`
+              );
             },
             onmessage: (message: any) => {
               this.handleServerMessage(message);
@@ -265,7 +283,7 @@ export class GeminiLiveReceptionistClient {
         await this.startMicrophonePipeline();
 
         this.sendTextMessage(
-          'A caller just connected to the Apree-rose Trading Limited voice receptionist line. Greet them warmly with a natural, realistic feminine voice, introduce yourself as Sophie from Apree-rose Trading Limited in 2 sentences, and ask how you can help them today. Remember: never say "Thank you, [Company Name]" or "Thank you and [Company Name]" when the caller tells you their company name.'
+          `A caller just connected to the Apree-rose Trading Limited voice receptionist line. ${persona.accentInstruction} Greet them warmly, introduce yourself as ${persona.receptionistName} from Apree-rose Trading Limited in 2 sentences, and ask how you can help them today. Remember: never say "Thank you, [Company Name]" or "Thank you and [Company Name]" when the caller tells you their company name.`
         );
         return;
       } catch (err: any) {

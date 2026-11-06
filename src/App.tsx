@@ -26,6 +26,7 @@ import {
   APRIROSE_KNOWLEDGE_BASE,
   BuyerFacts,
   SimulatedMeetingState,
+  VOICE_PERSONA_OPTIONS,
 } from './data/apriroseKnowledge';
 import {
   checkCommercialReadiness,
@@ -71,7 +72,9 @@ const QUICK_TOPICS = [
 export default function App() {
   const geminiApiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
   const geminiModel = 'gemini-3.8-live';
-  const [geminiVoice, setGeminiVoice] = useState<string>('Aoede');
+  const [geminiVoice, setGeminiVoice] = useState<string>('uk_aoede');
+  const activePersona =
+    VOICE_PERSONA_OPTIONS.find((p) => p.id === geminiVoice) || VOICE_PERSONA_OPTIONS[0];
 
   const [callStatus, setCallStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [statusDetail, setStatusDetail] = useState<string>('Ready to connect');
@@ -146,8 +149,9 @@ export default function App() {
     }
   };
 
-  const startLiveCall = async (overrideKey?: string) => {
+  const startLiveCall = async (overrideKey?: string, overrideVoiceId?: string) => {
     const keyToUse = (overrideKey ?? geminiApiKey).trim();
+    const voiceToUse = overrideVoiceId ?? geminiVoice;
 
     const client = new GeminiLiveReceptionistClient({
       onStatusChange: (status, detail) => {
@@ -221,7 +225,7 @@ export default function App() {
 
     liveClientRef.current = client;
     try {
-      await client.connect(keyToUse, geminiModel, geminiVoice);
+      await client.connect(keyToUse, geminiModel, voiceToUse);
     } catch {
       // Handled via onStatusChange
     }
@@ -451,12 +455,15 @@ export default function App() {
 
                 <div className="mt-4 text-center">
                   <h2 className="text-lg font-serif-editorial font-semibold text-white">
-                    Sophie · Aprirose AI Receptionist
+                    {activePersona.receptionistName} · Aprirose AI Receptionist
                   </h2>
+                  <p className="text-[11px] text-[#D8B47C] font-medium mt-0.5">
+                    {activePersona.accentSummary}
+                  </p>
                   <p className="text-xs text-[#A9C6C9] mt-1 max-w-sm">
                     {callStatus === 'connected'
-                      ? 'Connected — Speak naturally into your microphone. You may interrupt or ask questions at any time.'
-                      : 'Press Start Call to speak live with Sophie regarding polymers, chemicals, pricing inquiries, or scheduling.'}
+                      ? 'Connected — Speak naturally into your microphone. You may interrupt or switch voices at any time.'
+                      : `Press Start Call to speak live with ${activePersona.receptionistName} regarding polymers, chemicals, pricing inquiries, or scheduling.`}
                   </p>
                 </div>
 
@@ -477,20 +484,34 @@ export default function App() {
 
                   <select
                     value={geminiVoice}
-                    onChange={(e) => setGeminiVoice(e.target.value)}
-                    disabled={callStatus === 'connected'}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/15 border border-white/15 text-white cursor-pointer focus:outline-none disabled:opacity-60"
-                    title="Receptionist Voice Persona"
+                    onChange={async (e) => {
+                      const nextVoiceId = e.target.value;
+                      setGeminiVoice(nextVoiceId);
+                      if (callStatus === 'connected' || callStatus === 'connecting') {
+                        if (liveClientRef.current) {
+                          liveClientRef.current.disconnect();
+                          liveClientRef.current = null;
+                        }
+                        await startLiveCall(undefined, nextVoiceId);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/15 border border-white/15 text-white cursor-pointer focus:outline-none"
+                    title="Select British or American Female Voice Persona"
                   >
-                    <option value="Aoede" className="text-[#0D2B2F] bg-white">
-                      Voice: Aoede (Warm British/Intl)
-                    </option>
-                    <option value="Kore" className="text-[#0D2B2F] bg-white">
-                      Voice: Kore (Soft & Composed)
-                    </option>
-                    <option value="Leda" className="text-[#0D2B2F] bg-white">
-                      Voice: Leda (Clear & Expressive)
-                    </option>
+                    <optgroup label="🇬🇧 British Female Voices (UK)" className="text-[#0D2B2F] bg-white font-semibold">
+                      {VOICE_PERSONA_OPTIONS.filter((p) => p.group === 'British Female').map((persona) => (
+                        <option key={persona.id} value={persona.id} className="text-[#0D2B2F] bg-white font-normal">
+                          🇬🇧 {persona.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="🇺🇸 American Female Voices (US)" className="text-[#0D2B2F] bg-white font-semibold">
+                      {VOICE_PERSONA_OPTIONS.filter((p) => p.group === 'American Female').map((persona) => (
+                        <option key={persona.id} value={persona.id} className="text-[#0D2B2F] bg-white font-normal">
+                          🇺🇸 {persona.label}
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
               </div>
@@ -526,7 +547,7 @@ export default function App() {
                 >
                   <div className="flex items-center gap-2 mb-1 px-1">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-[#4A6B70]">
-                      {turn.role === 'caller' ? 'Caller' : 'Sophie · Aprirose Reception'}
+                      {turn.role === 'caller' ? 'Caller' : `${activePersona.receptionistName} · Aprirose Reception`}
                     </span>
                     <span className="text-[10px] text-[#7A969A] font-mono-tech">{turn.timestamp}</span>
                   </div>
