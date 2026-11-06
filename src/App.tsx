@@ -98,6 +98,7 @@ export default function App() {
   const [humanPaused, setHumanPaused] = useState(false);
 
   const [activeRightTab, setActiveRightTab] = useState<'crm' | 'kb'>('crm');
+  const [mobileSection, setMobileSection] = useState<'call' | 'crm' | 'kb'>('call');
   const [kbSubTab, setKbSubTab] = useState<'products' | 'mfi' | 'offices' | 'history' | 'compliance'>('products');
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [showAllFields, setShowAllFields] = useState(false);
@@ -325,31 +326,31 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F4F7F6] text-[#0D2B2F]">
+    <div className="min-h-screen flex flex-col bg-[#F4F7F6] text-[#0D2B2F] pb-20 lg:pb-0">
       {/* EXECUTIVE TOP HEADER */}
       <header className="bg-[#0B2E33] text-white border-b border-[#19464C] sticky top-0 z-30 shadow-xs">
-        <div className="max-w-[1560px] mx-auto px-4 sm:px-8 py-4 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-xl bg-[#143F45] border border-[#285E66] flex items-center justify-center font-serif-editorial font-bold text-lg text-[#D8B47C]">
+        <div className="max-w-[1560px] mx-auto px-3.5 sm:px-8 py-2.5 sm:py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl bg-[#143F45] border border-[#285E66] flex items-center justify-center font-serif-editorial font-bold text-base sm:text-lg text-[#D8B47C]">
               A
             </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <span className="tracking-[0.26em] font-semibold text-sm sm:text-base text-white">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="tracking-[0.22em] sm:tracking-[0.26em] font-semibold text-xs sm:text-base text-white">
                   APRIROSE
                 </span>
-                <span className="h-3.5 w-[1px] bg-[#B88A4B]" />
-                <span className="text-xs uppercase tracking-[0.16em] text-[#D8C3A5] font-medium">
+                <span className="h-3 w-[1px] bg-[#B88A4B]" />
+                <span className="text-[10px] sm:text-xs uppercase tracking-[0.12em] sm:tracking-[0.16em] text-[#D8C3A5] font-medium truncate">
                   Trading Limited
                 </span>
               </div>
-              <p className="text-xs text-[#9BBEC2] mt-0.5">
-                London Headquarters · AI Voice Reception & Global Commercial Desk
+              <p className="text-[10px] sm:text-xs text-[#9BBEC2] mt-0.5 truncate">
+                London HQ · AI Voice Reception & Commercial Desk
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 shrink-0">
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#11393F] border border-[#215259] text-xs text-[#C7DFE1]">
               <span
                 className={`w-2 h-2 rounded-full ${
@@ -365,27 +366,31 @@ export default function App() {
 
             <button
               onClick={handleResetSession}
-              className="px-3 py-2 rounded-lg bg-[#143F45] hover:bg-[#1B5158] text-xs text-[#C7DFE1] border border-[#285E66] flex items-center gap-1.5 transition cursor-pointer"
+              className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-[#143F45] hover:bg-[#1B5158] text-xs text-[#C7DFE1] border border-[#285E66] flex items-center gap-1.5 transition cursor-pointer touch-manipulation"
               title="Reset Inquiry"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">New Inquiry</span>
+              <span className="text-[11px] sm:text-xs">Reset</span>
             </button>
           </div>
         </div>
       </header>
 
       {/* MAIN WORKSPACE */}
-      <main className="flex-1 max-w-[1560px] w-full mx-auto px-4 sm:px-8 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <main className="flex-1 max-w-[1560px] w-full mx-auto px-3 sm:px-8 py-3 sm:py-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
         {/* LEFT COLUMN (5 COLS): VOICE RECEPTIONIST CALL CONSOLE */}
-        <section className="lg:col-span-5 flex flex-col gap-4">
+        <section
+          className={`lg:col-span-5 flex flex-col gap-4 ${
+            mobileSection === 'call' ? 'flex' : 'hidden lg:flex'
+          }`}
+        >
           <div className="bg-white rounded-2xl border border-[#D5E0DF] shadow-xs overflow-hidden flex flex-col">
             {/* Voice Receptionist Stage */}
-            <div className="bg-gradient-to-br from-[#0B2E33] via-[#103B41] to-[#082226] p-6 text-white relative">
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-2">
+            <div className="bg-gradient-to-br from-[#0B2E33] via-[#103B41] to-[#082226] p-4 sm:p-6 text-white relative">
+              <div className="flex items-center justify-between gap-2 mb-3 sm:mb-5">
+                <div className="flex items-center gap-2 min-w-0">
                   <span
-                    className={`w-2.5 h-2.5 rounded-full ${
+                    className={`w-2.5 h-2.5 shrink-0 rounded-full ${
                       callStatus === 'connected'
                         ? 'bg-emerald-400 animate-pulse'
                         : callStatus === 'connecting'
@@ -395,41 +400,41 @@ export default function App() {
                         : 'bg-slate-400'
                     }`}
                   />
-                  <span className="text-xs font-medium tracking-wide text-[#B8D2D5]">
+                  <span className="text-[11px] sm:text-xs font-medium tracking-wide text-[#B8D2D5] truncate">
                     {statusDetail}
                   </span>
                 </div>
 
                 {humanPaused ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-500/20 text-amber-200 border border-amber-400/40">
-                    <UserCheck className="w-3.5 h-3.5" />
-                    Sales Representative Requested
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-medium bg-amber-500/20 text-amber-200 border border-amber-400/40 shrink-0">
+                    <UserCheck className="w-3 h-3" />
+                    Sales Rep Requested
                   </span>
                 ) : (
-                  <span className="text-[11px] text-[#9BBEC2] font-mono-tech">
-                    London Desk · +44 20 8951 0377
+                  <span className="text-[10px] sm:text-[11px] text-[#9BBEC2] font-mono-tech shrink-0">
+                    +44 20 8951 0377
                   </span>
                 )}
               </div>
 
               {/* Central Interactive Call Orb */}
-              <div className="flex flex-col items-center justify-center py-5">
+              <div className="flex flex-col items-center justify-center py-2 sm:py-5">
                 <div className="relative flex items-center justify-center">
                   {callStatus === 'connected' && (
                     <>
                       <div
-                        className="absolute w-32 h-32 rounded-full bg-[#B88A4B]/30 animate-pulse-ring"
+                        className="absolute w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-[#B88A4B]/30 animate-pulse-ring"
                         style={{
                           transform: `scale(${1 + Math.max(audioLevels.input, audioLevels.output) * 0.5})`,
                         }}
                       />
-                      <div className="absolute w-24 h-24 rounded-full bg-emerald-400/15 animate-pulse" />
+                      <div className="absolute w-22 h-22 sm:w-24 sm:h-24 rounded-full bg-emerald-400/15 animate-pulse" />
                     </>
                   )}
 
                   <button
                     onClick={handleToggleCall}
-                    className={`relative z-10 w-24 h-24 rounded-full flex flex-col items-center justify-center transition-all duration-200 shadow-xl cursor-pointer ${
+                    className={`relative z-10 w-20 h-20 sm:w-24 sm:h-24 rounded-full flex flex-col items-center justify-center transition-all duration-200 shadow-xl cursor-pointer touch-manipulation active:scale-95 ${
                       callStatus === 'connected'
                         ? 'bg-rose-600 hover:bg-rose-700 text-white ring-4 ring-rose-400/30'
                         : callStatus === 'connecting'
@@ -439,13 +444,13 @@ export default function App() {
                   >
                     {callStatus === 'connected' ? (
                       <>
-                        <PhoneOff className="w-7 h-7 mb-1" />
-                        <span className="text-[11px] font-semibold uppercase tracking-wider">End Call</span>
+                        <PhoneOff className="w-6 h-6 sm:w-7 sm:h-7 mb-1" />
+                        <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider">End Call</span>
                       </>
                     ) : (
                       <>
-                        <Phone className="w-7 h-7 mb-1" />
-                        <span className="text-[11px] font-semibold uppercase tracking-wider">
+                        <Phone className="w-6 h-6 sm:w-7 sm:h-7 mb-1" />
+                        <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider">
                           {callStatus === 'connecting' ? 'Connecting' : 'Start Call'}
                         </span>
                       </>
@@ -453,26 +458,26 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="mt-4 text-center">
-                  <h2 className="text-lg font-serif-editorial font-semibold text-white">
+                <div className="mt-3 sm:mt-4 text-center">
+                  <h2 className="text-base sm:text-lg font-serif-editorial font-semibold text-white">
                     {activePersona.receptionistName} · Aprirose AI Receptionist
                   </h2>
                   <p className="text-[11px] text-[#D8B47C] font-medium mt-0.5">
                     {activePersona.accentSummary}
                   </p>
-                  <p className="text-xs text-[#A9C6C9] mt-1 max-w-sm">
+                  <p className="text-[11px] sm:text-xs text-[#A9C6C9] mt-1 max-w-sm px-2">
                     {callStatus === 'connected'
-                      ? 'Connected — Speak naturally into your microphone. You may interrupt or switch voices at any time.'
-                      : `Press Start Call to speak live with ${activePersona.receptionistName} regarding polymers, chemicals, pricing inquiries, or scheduling.`}
+                      ? 'Connected — Speak naturally into your phone or microphone.'
+                      : `Tap Start Call to speak live with ${activePersona.receptionistName} regarding polymers, chemicals, or scheduling.`}
                   </p>
                 </div>
 
                 {/* Microphone & Voice Controls */}
-                <div className="flex flex-wrap items-center justify-center gap-2.5 mt-5">
+                <div className="w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2 mt-3.5 sm:mt-5">
                   <button
                     onClick={handleToggleMicMute}
                     disabled={callStatus !== 'connected'}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition cursor-pointer disabled:opacity-50 ${
+                    className={`px-3.5 py-2 sm:py-1.5 rounded-xl sm:rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 border transition cursor-pointer touch-manipulation disabled:opacity-50 ${
                       isMicMuted
                         ? 'bg-rose-500/20 border-rose-400/40 text-rose-200'
                         : 'bg-white/10 hover:bg-white/15 border-white/15 text-white'
@@ -495,7 +500,7 @@ export default function App() {
                         await startLiveCall(undefined, nextVoiceId);
                       }
                     }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/15 border border-white/15 text-white cursor-pointer focus:outline-none"
+                    className="w-full sm:w-auto px-3 py-2 sm:py-1.5 rounded-xl sm:rounded-lg text-base sm:text-xs font-medium bg-white/10 hover:bg-white/15 border border-white/15 text-white cursor-pointer focus:outline-none truncate"
                     title="Select British or American Female Voice Persona"
                   >
                     <optgroup label="🇬🇧 British Female Voices (UK)" className="text-[#0D2B2F] bg-white font-semibold">
@@ -518,17 +523,17 @@ export default function App() {
             </div>
 
             {/* Quick Conversation Starters */}
-            <div className="px-4 py-3 bg-[#EDF3F2] border-b border-[#D5E0DF]">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#3B5E63] flex items-center gap-1.5 mb-2">
+            <div className="px-3.5 sm:px-4 py-2.5 sm:py-3 bg-[#EDF3F2] border-b border-[#D5E0DF]">
+              <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-[#3B5E63] flex items-center gap-1.5 mb-1.5 sm:mb-2">
                 <Sparkles className="w-3.5 h-3.5 text-[#B88A4B]" />
-                Quick Inquiry Topics
+                Quick Inquiry Topics (Tap to Send)
               </span>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex overflow-x-auto sm:flex-wrap gap-1.5 no-scrollbar pb-0.5">
                 {QUICK_TOPICS.map((item, idx) => (
                   <button
                     key={idx}
                     onClick={() => handleSendPromptToCall(item.prompt)}
-                    className="text-left text-[11px] px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#0B2E33] text-[#0B2E33] hover:text-white border border-[#C6D6D5] transition font-medium cursor-pointer shadow-2xs"
+                    className="shrink-0 text-left text-[11px] px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#0B2E33] active:bg-[#0B2E33] text-[#0B2E33] hover:text-white active:text-white border border-[#C6D6D5] transition font-medium cursor-pointer touch-manipulation shadow-2xs"
                   >
                     {item.label}
                   </button>
@@ -537,7 +542,7 @@ export default function App() {
             </div>
 
             {/* Live Call Transcript */}
-            <div className="p-4 h-[380px] overflow-y-auto space-y-3 bg-[#F9FBFA]">
+            <div className="p-3.5 sm:p-4 h-[230px] sm:h-[360px] overflow-y-auto space-y-3 bg-[#F9FBFA]">
               {transcript.map((turn) => (
                 <div
                   key={turn.id}
@@ -546,14 +551,14 @@ export default function App() {
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-1 px-1">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-[#4A6B70]">
+                    <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-[#4A6B70]">
                       {turn.role === 'caller' ? 'Caller' : `${activePersona.receptionistName} · Aprirose Reception`}
                     </span>
                     <span className="text-[10px] text-[#7A969A] font-mono-tech">{turn.timestamp}</span>
                   </div>
 
                   <div
-                    className={`max-w-[88%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-2xs ${
+                    className={`max-w-[90%] sm:max-w-[88%] rounded-2xl px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm leading-relaxed shadow-2xs ${
                       turn.role === 'caller'
                         ? 'bg-[#0B2E33] text-white rounded-br-xs'
                         : 'bg-white text-[#0D2B2F] border border-[#D5E0DF] rounded-bl-xs'
@@ -574,30 +579,34 @@ export default function App() {
                 handleSendPromptToCall(inputText);
                 setInputText('');
               }}
-              className="p-3 bg-white border-t border-[#D5E0DF] flex items-center gap-2"
+              className="p-2.5 sm:p-3 bg-white border-t border-[#D5E0DF] flex items-center gap-2"
             >
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="Type an email, grade, or message to send during the call..."
-                className="flex-1 text-sm px-3.5 py-2 rounded-xl border border-[#C6D6D5] bg-[#F6F9F8] focus:outline-none focus:border-[#0B2E33]"
+                placeholder="Type an email, grade, or message..."
+                className="flex-1 text-base sm:text-sm px-3.5 py-2 rounded-xl border border-[#C6D6D5] bg-[#F6F9F8] focus:outline-none focus:border-[#0B2E33]"
               />
               <button
                 type="submit"
-                className="px-4 py-2 rounded-xl bg-[#0B2E33] hover:bg-[#14454C] text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                className="px-3.5 sm:px-4 py-2.5 sm:py-2 rounded-xl bg-[#0B2E33] hover:bg-[#14454C] text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer touch-manipulation shrink-0"
               >
                 <Send className="w-3.5 h-3.5" />
-                Send
+                <span>Send</span>
               </button>
             </form>
           </div>
         </section>
 
         {/* RIGHT COLUMN (7 COLS): LIVE COMMERCIAL CRM & CORPORATE KNOWLEDGE BASE */}
-        <section className="lg:col-span-7 flex flex-col gap-4">
-          {/* Navigation Bar */}
-          <div className="bg-white rounded-xl p-1.5 border border-[#D5E0DF] flex flex-wrap gap-1.5 shadow-2xs">
+        <section
+          className={`lg:col-span-7 flex flex-col gap-4 ${
+            mobileSection !== 'call' ? 'flex' : 'hidden lg:flex'
+          }`}
+        >
+          {/* Desktop Navigation Bar */}
+          <div className="hidden lg:flex bg-white rounded-xl p-1.5 border border-[#D5E0DF] flex-wrap gap-1.5 shadow-2xs">
             <button
               onClick={() => setActiveRightTab('crm')}
               className={`flex-1 min-w-[200px] py-2.5 px-4 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer ${
@@ -1205,6 +1214,58 @@ export default function App() {
           )}
         </section>
       </main>
+
+      {/* MOBILE BOTTOM NAVIGATION BAR (PHONE & TABLET PORTRAIT) */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-[#0B2E33] text-white border-t border-[#1F5057] shadow-lg pb-safe">
+        <div className="grid grid-cols-3 h-14">
+          <button
+            onClick={() => setMobileSection('call')}
+            className={`flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition cursor-pointer touch-manipulation ${
+              mobileSection === 'call'
+                ? 'text-[#D8B47C] bg-[#143F45]'
+                : 'text-[#A9C6C9] hover:text-white'
+            }`}
+          >
+            <div className="relative">
+              <Phone className="w-4 h-4" />
+              {callStatus === 'connected' && (
+                <span className="absolute -top-0.5 -right-1.5 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              )}
+            </div>
+            <span>Voice Call</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setMobileSection('crm');
+              setActiveRightTab('crm');
+            }}
+            className={`flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition cursor-pointer touch-manipulation ${
+              mobileSection === 'crm'
+                ? 'text-[#D8B47C] bg-[#143F45]'
+                : 'text-[#A9C6C9] hover:text-white'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Live CRM ({readiness.score}%)</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setMobileSection('kb');
+              setActiveRightTab('kb');
+            }}
+            className={`flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition cursor-pointer touch-manipulation ${
+              mobileSection === 'kb'
+                ? 'text-[#D8B47C] bg-[#143F45]'
+                : 'text-[#A9C6C9] hover:text-white'
+            }`}
+          >
+            <BookOpen className="w-4 h-4" />
+            <span>Company Info</span>
+          </button>
+        </div>
+      </nav>
     </div>
   );
 }

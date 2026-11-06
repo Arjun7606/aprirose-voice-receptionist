@@ -197,6 +197,16 @@ export class GeminiLiveReceptionistClient {
       ])
     );
 
+    // Unlock AudioContext synchronously during the user tap gesture (critical for iOS Safari / mobile browsers)
+    const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!this.outputAudioCtx) {
+      this.outputAudioCtx = new AudioCtxClass({ sampleRate: 24000 });
+    }
+    if (this.outputAudioCtx.state === 'suspended') {
+      this.outputAudioCtx.resume().catch(() => {});
+    }
+    this.nextPlayTime = this.outputAudioCtx.currentTime;
+
     try {
       this.callbacks.onStatusChange('connecting', 'Requesting microphone access...');
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -250,7 +260,9 @@ export class GeminiLiveReceptionistClient {
           ],
         };
 
-        this.outputAudioCtx = new AudioContext({ sampleRate: 24000 });
+        if (!this.outputAudioCtx) {
+          this.outputAudioCtx = new AudioCtxClass({ sampleRate: 24000 });
+        }
         if (this.outputAudioCtx.state === 'suspended') {
           await this.outputAudioCtx.resume();
         }
@@ -403,7 +415,8 @@ export class GeminiLiveReceptionistClient {
   private async startMicrophonePipeline() {
     if (!this.mediaStream) return;
 
-    this.inputAudioCtx = new AudioContext();
+    const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+    this.inputAudioCtx = new AudioCtxClass();
     if (this.inputAudioCtx.state === 'suspended') {
       await this.inputAudioCtx.resume();
     }
