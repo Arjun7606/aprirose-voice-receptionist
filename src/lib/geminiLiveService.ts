@@ -71,8 +71,13 @@ const updateBuyerQualificationTool: FunctionDeclaration = {
       preferredContactMethod: { type: Type.STRING, description: 'Preferred contact channel (Email, WhatsApp, Phone)' },
       technicalDocumentRequested: { type: Type.STRING, description: 'Requested technical documents (e.g., TDS, COA, MSDS)' },
       equivalentGradeAcceptable: { type: Type.STRING, description: 'Whether equivalent grades are acceptable' },
-      evidenceQuote: { type: Type.STRING, description: 'Short verbatim quote from the caller supporting these facts' },
+      evidenceQuote: {
+        type: Type.STRING,
+        description:
+          'REQUIRED: The exact, clean English transcription of what the caller just said in this turn (correcting any phonetic homophones for company names, polymers, grades, or ports).',
+      },
     },
+    required: ['evidenceQuote'],
   },
 };
 
@@ -158,6 +163,55 @@ function base64ToInt16Array(base64: string): Int16Array {
   return new Int16Array(bytes.buffer);
 }
 
+export function normalizeTranscriptText(raw: string): string {
+  if (!raw) return '';
+  let text = raw
+    // Remove ASR noise markers
+    .replace(/<(?:noise|unk|silence|music|laughter)>|\[(?:noise|inaudible|music|silence)\]/gi, ' ')
+    // Strip stray non-Latin scripts if the multilingual ASR sidecar hallucinates on background noise
+    .replace(/[^\x20-\x7E\u00A0-\u024F\u2010-\u2027\u2030-\u205E£€]/g, ' ')
+    // Normalize Aprirose phonetic variants
+    .replace(
+      /\b(?:ap-?ree[\s-]*rose|apri[\s-]*rose|aprose|apree\s*rows?|every\s*rose|upper\s*rose|april\s*rose|apricot\s*rose|apreerose)\b/gi,
+      'Aprirose'
+    )
+    // Normalize B2B polymer, chemical, port & Incoterm homophones
+    .replace(/\b(?:pp|p\.?\s*p\.?)\s*(?:raffia|rafia|raphia|mafia)\b/gi, 'PP Raffia')
+    .replace(/\b(?:h\s*d\s*p\s*e)\b/gi, 'HDPE')
+    .replace(/\b(?:l\s*l\s*d\s*p\s*e)\b/gi, 'LLDPE')
+    .replace(/\b(?:m\s*l\s*l\s*d\s*p\s*e)\b/gi, 'mLLDPE')
+    .replace(/\b(?:l\s*d\s*p\s*e)\b/gi, 'LDPE')
+    .replace(/\b(?:p\s*p\s*h)\b/gi, 'PPH')
+    .replace(/\b(?:p\s*p\s*c\s*p)\b/gi, 'PPCP')
+    .replace(/\b(?:p\s*p\s*r)\b/gi, 'PPR')
+    .replace(/\b(?:p\s*v\s*c)\b/gi, 'PVC')
+    .replace(/\b(?:p\s*e\s*t)\s+resin\b/gi, 'PET Resin')
+    .replace(/\b(?:m\s*f\s*i)\b/gi, 'MFI')
+    .replace(/\b(?:t\s*d\s*i)\b/gi, 'TDI')
+    .replace(/\b(?:c\s*i\s*f)\b/gi, 'CIF')
+    .replace(/\b(?:c\s*f\s*r)\b/gi, 'CFR')
+    .replace(/\b(?:f\s*o\s*b)\b/gi, 'FOB')
+    .replace(/\b(?:f\s*c\s*l)\b/gi, 'FCL')
+    .replace(/\b(?:l\s*\/\s*c)\b/gi, 'LC')
+    .replace(/\b(?:t\s*\/\s*t)\b/gi, 'T/T')
+    .replace(/\b(?:tama\s*tave|tamatav)\b/gi, 'Tamatave')
+    .replace(/\b(?:mom\s*basa)\b/gi, 'Mombasa')
+    .replace(/\b(?:nava\s*sheva|nhava\s*shiva)\b/gi, 'Nhava Sheva')
+    .replace(/\b(?:chitta\s*gong)\b/gi, 'Chittagong')
+    .replace(/\b(?:sino\s*pec)\b/gi, 'Sinopec')
+    .replace(/\b(?:boro\s*uge|borouj)\b/gi, 'Borouge')
+    .replace(/\b(?:jin\s*neng)\b/gi, 'Jinneng')
+    // Clean spacing around punctuation
+    .replace(/\s+([,.;:?!])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  if (text.length > 0) {
+    text = text.charAt(0).toUpperCase() + text.slice(1);
+  }
+  return text;
+}
+
 export class GeminiLiveReceptionistClient {
   private session: any = null;
   private inputAudioCtx: AudioContext | null = null;
@@ -168,6 +222,8 @@ export class GeminiLiveReceptionistClient {
   private activeSources: AudioBufferSourceNode[] = [];
   private callbacks: LiveSessionCallbacks;
   private isMuted = false;
+  private currentUserTurnRaw = '';
+  private currentAssistantTurnRaw = '';
 
   constructor(callbacks: LiveSessionCallbacks) {
     this.callbacks = callbacks;
@@ -329,31 +385,68 @@ export class GeminiLiveReceptionistClient {
     }
   }
 
+  private flushUserTurn() {
+    if (!this.currentUserTurnRaw.trim()) return;
+    const cleaned = normalizeTranscriptText(this.currentUserTurnRaw);
+    this.currentUserTurnRaw = '';
+    if (cleaned) {
+      this.callbacks.onUserTranscript(cleaned, true);
+    }
+  }
+
+  private flushAssistantTurn() {
+    if (!this.currentAssistantTurnRaw.trim()) return;
+    const cleaned = normalizeTranscriptText(this.currentAssistantTurnRaw);
+    this.currentAssistantTurnRaw = '';
+    if (cleaned) {
+      this.callbacks.onAssistantTranscript(cleaned, true);
+    }
+  }
+
   private handleServerMessage(message: any) {
     const content = message?.serverContent;
 
     if (content?.interrupted) {
       this.stopPlaybackQueue();
+      this.flushAssistantTurn();
     }
 
     if (content?.inputTranscription?.text) {
-      this.callbacks.onUserTranscript(content.inputTranscription.text, Boolean(content.turnComplete));
+      if (this.currentAssistantTurnRaw) {
+        this.flushAssistantTurn();
+      }
+      this.currentUserTurnRaw += content.inputTranscription.text;
+      const cleaned = normalizeTranscriptText(this.currentUserTurnRaw);
+      if (cleaned) {
+        this.callbacks.onUserTranscript(cleaned, false);
+      }
     }
 
     if (content?.outputTranscription?.text) {
-      const normalizedTranscript = content.outputTranscription.text.replace(
-        /\bAp-?ree[\s-]*rose\b/gi,
-        'Aprirose'
-      );
-      this.callbacks.onAssistantTranscript(normalizedTranscript, Boolean(content.turnComplete));
+      if (this.currentUserTurnRaw) {
+        this.flushUserTurn();
+      }
+      this.currentAssistantTurnRaw += content.outputTranscription.text;
+      const cleaned = normalizeTranscriptText(this.currentAssistantTurnRaw);
+      if (cleaned) {
+        this.callbacks.onAssistantTranscript(cleaned, false);
+      }
     }
 
     if (content?.modelTurn?.parts) {
+      if (this.currentUserTurnRaw) {
+        this.flushUserTurn();
+      }
       for (const part of content.modelTurn.parts) {
         if (part.inlineData?.data) {
           this.enqueueAudioChunk(part.inlineData.data);
         }
       }
+    }
+
+    if (content?.turnComplete) {
+      this.flushUserTurn();
+      this.flushAssistantTurn();
     }
 
     if (message?.toolCall?.functionCalls) {
@@ -370,6 +463,16 @@ export class GeminiLiveReceptionistClient {
               if (evidenceQuote) evidenceMap[k] = evidenceQuote;
             }
           }
+          // If the model understood a clean English evidenceQuote and the ASR sidecar was noisy or incomplete, upgrade the caller transcript
+          if (typeof evidenceQuote === 'string' && evidenceQuote.trim()) {
+            const cleanQuote = normalizeTranscriptText(evidenceQuote);
+            const currentCleaned = normalizeTranscriptText(this.currentUserTurnRaw);
+            if (!currentCleaned || currentCleaned.length < cleanQuote.length * 0.6) {
+              this.currentUserTurnRaw = cleanQuote;
+              this.callbacks.onUserTranscript(cleanQuote, false);
+            }
+          }
+          this.flushUserTurn();
           this.callbacks.onFactsUpdated(cleanFacts, evidenceMap);
           functionResponses.push({
             name: fc.name,

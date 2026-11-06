@@ -159,9 +159,9 @@ export default function App() {
         setCallStatus(status);
         if (detail) setStatusDetail(detail);
       },
-      onUserTranscript: (text, isFinal) => {
-        if (isFinal && text.trim()) {
-          syncCallerUtteranceToCrm(text);
+      onUserTranscript: (fullTurnText, isFinal) => {
+        if (fullTurnText.trim()) {
+          syncCallerUtteranceToCrm(fullTurnText);
         }
         setTranscript((prev) => {
           const last = prev[prev.length - 1];
@@ -171,7 +171,7 @@ export default function App() {
               {
                 ...last,
                 id: isFinal ? `caller-final-${Date.now()}` : last.id,
-                text: isFinal ? text : `${last.text} ${text}`.trim(),
+                text: fullTurnText,
               },
             ];
           }
@@ -180,13 +180,13 @@ export default function App() {
             {
               id: isFinal ? `caller-final-${Date.now()}` : `live-user-${Date.now()}`,
               role: 'caller',
-              text,
+              text: fullTurnText,
               timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             },
           ];
         });
       },
-      onAssistantTranscript: (text, isFinal) => {
+      onAssistantTranscript: (fullTurnText, isFinal) => {
         setTranscript((prev) => {
           const last = prev[prev.length - 1];
           if (last && last.role === 'receptionist' && last.id.startsWith('live-rec-')) {
@@ -195,7 +195,7 @@ export default function App() {
               {
                 ...last,
                 id: isFinal ? `rec-final-${Date.now()}` : last.id,
-                text: `${last.text}${text}`,
+                text: fullTurnText,
               },
             ];
           }
@@ -204,7 +204,7 @@ export default function App() {
             {
               id: isFinal ? `rec-final-${Date.now()}` : `live-rec-${Date.now()}`,
               role: 'receptionist',
-              text,
+              text: fullTurnText,
               timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             },
           ];
