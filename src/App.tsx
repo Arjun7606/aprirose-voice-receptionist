@@ -82,7 +82,7 @@ export default function App() {
     {
       id: 'welcome-turn',
       role: 'receptionist',
-      text: 'Welcome to Aprirose Trading Limited. Click "Start Call" to speak live with our AI Receptionist & Commercial Desk Specialist regarding polymer and chemical procurement, technical grade references, global offices, or scheduling a commercial consultation.',
+      text: 'Welcome to Aprirose Trading Limited. Click "Start Call" to speak live with Sophie, our AI Receptionist & Commercial Desk Specialist, regarding polymer and chemical procurement, technical grade references, global offices, or scheduling a commercial consultation.',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -451,12 +451,12 @@ export default function App() {
 
                 <div className="mt-4 text-center">
                   <h2 className="text-lg font-serif-editorial font-semibold text-white">
-                    Aprirose AI Receptionist
+                    Sophie · Aprirose AI Receptionist
                   </h2>
                   <p className="text-xs text-[#A9C6C9] mt-1 max-w-sm">
                     {callStatus === 'connected'
                       ? 'Connected — Speak naturally into your microphone. You may interrupt or ask questions at any time.'
-                      : 'Press Start Call to speak live regarding polymers, chemicals, pricing inquiries, or scheduling.'}
+                      : 'Press Start Call to speak live with Sophie regarding polymers, chemicals, pricing inquiries, or scheduling.'}
                   </p>
                 </div>
 
@@ -526,7 +526,7 @@ export default function App() {
                 >
                   <div className="flex items-center gap-2 mb-1 px-1">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-[#4A6B70]">
-                      {turn.role === 'caller' ? 'Caller' : 'Aprirose Reception'}
+                      {turn.role === 'caller' ? 'Caller' : 'Sophie · Aprirose Reception'}
                     </span>
                     <span className="text-[10px] text-[#7A969A] font-mono-tech">{turn.timestamp}</span>
                   </div>

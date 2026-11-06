@@ -265,7 +265,7 @@ export class GeminiLiveReceptionistClient {
         await this.startMicrophonePipeline();
 
         this.sendTextMessage(
-          'A caller just connected to the Apree-rose Trading Limited voice receptionist line. Greet them warmly with a natural, realistic feminine voice on behalf of Apree-rose Trading Limited in 2 sentences and ask how you can help them today. Remember: never say "Thank you, [Company Name]" or "Thank you and [Company Name]" when the caller tells you their company name.'
+          'A caller just connected to the Apree-rose Trading Limited voice receptionist line. Greet them warmly with a natural, realistic feminine voice, introduce yourself as Sophie from Apree-rose Trading Limited in 2 sentences, and ask how you can help them today. Remember: never say "Thank you, [Company Name]" or "Thank you and [Company Name]" when the caller tells you their company name.'
         );
         return;
       } catch (err: any) {
